@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import spyglass as nd
 from spyglass.common import IntervalList
-from spyglass.spikesorting import SortInterval, CuratedSpikeSorting
+from spyglass.spikesorting.v0.spikesorting_curation import SortInterval, CuratedSpikeSorting
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SecKeyParamsBase, PartBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import (insert_analysis_table_entry,

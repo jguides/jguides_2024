@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import spyglass as nd
 from spyglass.common import ElectrodeGroup
-from spyglass.spikesorting import SortGroup
+from spyglass.spikesorting.v0.spikesorting_recording import SortGroup
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SecKeyParamsBase, SelBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert1_print, check_nwb_file_name, \

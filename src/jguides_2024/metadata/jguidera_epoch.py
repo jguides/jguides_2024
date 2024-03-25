@@ -672,7 +672,9 @@ class RecordingSet(NwbfSetBase):
             recording_set_names += [self.lookup_rat_cohort_set_name()]
 
         if "first_day_learning_single_epoch" in recording_set_names_types:
-            nwb_file_names = ["J1620210529_.nwb"]
+            nwb_file_names = [
+                "J1620210529_.nwb", "mango20211101_.nwb", "june20220412_.nwb", "peanut20201101_.nwb",
+                "fig20211101_.nwb"]
             for nwb_file_name in nwb_file_names:
                 epochs_descriptions = EpochsDescription().get_single_contingency_descriptions(
                     nwb_file_name, exclude_non_full_len=True, exclude_artifact=True)
@@ -692,16 +694,6 @@ class RecordingSet(NwbfSetBase):
 
         # Return recording set names
         return recording_set_names
-
-
-def populate_jguidera_epoch(key=None, tolerate_error=False):
-    for table_name in get_schema_table_names_from_file(schema_name):
-        table = eval(table_name)
-        populate_insert(table, key=key, tolerate_error=tolerate_error)
-
-
-def drop_jguidera_epoch():
-    schema.drop()
 
 
 @schema
@@ -925,3 +917,13 @@ class TrainTestEpochSet(NwbfSetBase):
                 {"nwb_file_name": key_filter["nwb_file_name"]})]
 
         return train_test_epoch_set_names
+
+
+def populate_jguidera_epoch(key=None, tolerate_error=False):
+    for table_name in get_schema_table_names_from_file(schema_name):
+        table = eval(table_name)
+        populate_insert(table, key=key, tolerate_error=tolerate_error)
+
+
+def drop_jguidera_epoch():
+    schema.drop()

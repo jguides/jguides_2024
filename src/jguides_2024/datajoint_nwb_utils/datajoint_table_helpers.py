@@ -925,12 +925,12 @@ def get_schema_table_names_from_file(schema_name, schema_path=None):
     # Get tables in a schema, not including parts tables
     # Get from file. Here, tables listed in order of file. Useful if want this ordering
 
-    # Change to directory with schema if passed
-    if schema_path is not None:
-        os.chdir(schema_path)
+    # Get jguidera schema path if not passed
+    if schema_path is None:
+        schema_path = get_jguidera_schema_dir(schema_name)
 
     # Get contents of file with schema
-    file_contents = np.asarray(get_file_contents(f"{schema_name.replace('.', '/')}.py").split("\n"))  # split lines
+    file_contents = np.asarray(get_file_contents(f"{schema_name.replace('.', '/')}.py", schema_path).split("\n"))  # split lines
 
     # Identify lines with table definitions as those below lines with the schema decorator. Exclude comments
     table_idxs = [idx + 1 for idx, x in enumerate(file_contents) if "@schema" in x and x[0] != "#"]
@@ -944,22 +944,51 @@ def get_project_dir():
     return "/home/jguidera/Src/jguides_2024/"
 
 
+def get_module_dir():
+    return "src/jguides_2024"
+
+
+def get_module_path():
+    return os.path.join(get_project_dir(), get_module_dir())
+
+
+def get_module_subdirs():
+    module_path = get_module_dir()
+    return [x for x in os.listdir(module_path) if not x.startswith("_")
+                  and os.path.isdir(os.path.join(module_path, x))]
+
+
 def get_schema_names():
 
-    project_dir = get_project_dir()
-    module_dir = "src/jguides_2024"
-    module_path = f"{project_dir}/{module_dir}"
-    child_dirs = [x for x in os.listdir(module_path) if not x.startswith("_")
-                  and os.path.isdir(os.path.join(module_path, x))]
+    # Get schema names
+    # IMPORTANT NOTE: only set up to get schema names with "one level of nesting", i.e.
+    # in a subfolder of the module path
+
+    module_path = get_module_path()
+    module_dir = get_module_dir()
+    subdirs = get_module_subdirs()
     target_start_string = "jguidera"
 
     schema_names = [
-        f"{module_dir.replace('/', '.')}.{child_dir}.{x}".replace("..", ".") for child_dir in child_dirs
+        f"{module_dir.replace('/', '.')}.{child_dir}.{x}".replace("..", ".") for child_dir in subdirs
         for x in os.listdir(f"{module_path}/{child_dir}")
         if x[:len(target_start_string)] == target_start_string]
 
     return [x.replace(".py", "") for x in schema_names]
 
+
+def get_jguidera_schema_dir(schema_name):
+    # Get directory in which a jguidera schema lives
+    # IMPORTANT NOTE: only set up to get schema names with "one level of nesting", i.e.
+    # in a subfolder of the module path
+
+    module_path = get_module_path()
+    subdirs = [
+        x for x in os.listdir(module_path) if not x.startswith("_") and os.path.isdir(os.path.join(module_path, x))]
+
+    return unpack_single_element(
+        [os.path.join(module_path, child_dir) for child_dir in subdirs for x in os.listdir(
+            f"{module_path}/{child_dir}") if x == f"{schema_name}.py"])
 
 def get_import_statements(schema_names=None):
 

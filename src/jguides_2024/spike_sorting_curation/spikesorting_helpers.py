@@ -1,7 +1,7 @@
 import os as os
 from pathlib import Path
 
-from spyglass.spikesorting import SpikeSorterParameters
+from spyglass.spikesorting.v0.spikesorting_sorting import SpikeSorterParameters
 
 
 def set_spikesorting_directories(base_dir):
@@ -92,7 +92,6 @@ def get_peak_ch_map(nwb_file_name, sort_group_id, sort_interval_name="raw data v
     key = {"nwb_file_name": nwb_file_name, "sort_group_id": sort_group_id, "sort_interval_name": sort_interval_name,
            "curation_id": curation_id}
     # Get waveform extractor
-    from spyglass.spikesorting import Waveforms
-    from spyglass.spikesorting.spikesorting_curation import _get_peak_channel
+    from spyglass.spikesorting.v0.spikesorting_curation import _get_peak_channel, Waveforms
     waveform_extractor = Waveforms().load_waveforms(key)
     return _get_peak_channel(waveform_extractor, peak_sign)

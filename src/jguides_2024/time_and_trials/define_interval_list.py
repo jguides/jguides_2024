@@ -16,6 +16,7 @@ class NewIntervalList:
 
     def __init__(self, starting_interval_list_names, nwb_file_name, NO_PREMAZE=False, NO_HOME=False, NO_SLEEP=False,
                  widen_exclusion_factor=.002):
+
         # Check inputs
         if not isinstance(starting_interval_list_names, list):
             raise Exception("starting_interval_list_names must be a list")
@@ -105,7 +106,9 @@ class NewIntervalList:
 
     def _define_exclusion_periods(self):
         # Define exclusion periods as indicated by flags
+
         exclude_interval_list = []  # initialize list for intervals to exclude
+
         # Get names of epochs in IntervalList to be able to search for relevant epochs based on flags
         # (e.g. run epochs if excluding premaze times)
         epoch_names = (TaskEpoch & {"nwb_file_name": self.nwb_file_name}).fetch("interval_list_name")
@@ -157,6 +160,7 @@ class NewIntervalList:
                                                  "interval_list_name": sleep_epoch_name}).fetch1("valid_times")
                 # Append sleep epoch period to list of intervals to exclude
                 exclude_interval_list.append([interval_list[0][0], interval_list[-1][-1]])
+
         return exclude_interval_list
 
     def _widen_exclusion_periods(self, exclude_interval_list):

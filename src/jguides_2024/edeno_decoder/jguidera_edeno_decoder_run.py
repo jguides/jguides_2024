@@ -14,10 +14,10 @@ import spyglass as nd
 import xarray as xr
 from replay_trajectory_classification import ClusterlessClassifier, SortedSpikesClassifier
 from spyglass.common import IntervalList, IntervalLinearizedPosition
-from spyglass.decoding import (
-    SortedSpikesIndicatorSelection, SortedSpikesIndicator, ClusterlessClassifierParameters,
-    SortedSpikesClassifierParameters)
-from spyglass.spikesorting import CuratedSpikeSorting
+from spyglass.decoding.v0.sorted_spikes import (
+    SortedSpikesIndicatorSelection, SortedSpikesIndicator, SortedSpikesClassifierParameters)
+from spyglass.decoding.v0.clusterless import ClusterlessClassifierParameters
+from spyglass.spikesorting.v0.spikesorting_curation import CuratedSpikeSorting
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_reliability_paper_nwb_file_names, \
     get_subject_id

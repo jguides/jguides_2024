@@ -9,9 +9,10 @@ import scipy as sp
 import spikeinterface as si
 import spyglass as nd
 from spyglass.common import IntervalList
-from spyglass.spikesorting import (ArtifactDetectionSelection,
-                                   SpikeSortingRecording, ArtifactRemovedIntervalList,
-                                   ArtifactDetectionParameters)
+from spyglass.spikesorting.v0.spikesorting_artifact import (ArtifactDetectionSelection,
+                                                            ArtifactRemovedIntervalList,
+                                                            ArtifactDetectionParameters)
+from spyglass.spikesorting.v0.spikesorting_recording import SpikeSortingRecording
 from spyglass.utils.nwb_helper_fn import get_valid_intervals
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase, SelBase, ComputedBase

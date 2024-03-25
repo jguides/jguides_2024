@@ -12,8 +12,10 @@ import scipy as sp
 import scipy.stats as stats
 import spikeinterface as si
 from spyglass.common import IntervalList
-from spyglass.spikesorting import (SpikeSortingRecording, SpikeSorting, SortingviewWorkspace)
-from spyglass.spikesorting.spikesorting_curation import (CuratedSpikeSorting, Waveforms, WaveformSelection)
+from spyglass.spikesorting.v0.spikesorting_recording import SpikeSortingRecording
+from spyglass.spikesorting.v0.spikesorting_sorting import SpikeSorting
+from spyglass.spikesorting.v0.sortingview import SortingviewWorkspace
+from spyglass.spikesorting.v0.spikesorting_curation import (CuratedSpikeSorting, Waveforms, WaveformSelection)
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import format_nwb_file_name, make_params_string
 from src.jguides_2024.datajoint_nwb_utils.nwbf_helpers import nwbf_name_from_subject_id_date
@@ -75,7 +77,7 @@ def get_curation_spreadsheet_notes(subject_id, date, sort_description, tolerate_
     """
 
     # Define directory with service account file
-    service_account_dir = f"/home/jguidera/Src/jguides_2024/spikesorting_notebooks/curation_merge_notes"
+    service_account_dir = f"/home/jguidera/Src/jguides_2024_archive/nwb_custom_analysis_untracked/spikesorting_notebooks/curation_merge_notes"
 
     # Define name of service account file
     service_account_json = "frank-lab-jupyter-01e1afefcf28.json"

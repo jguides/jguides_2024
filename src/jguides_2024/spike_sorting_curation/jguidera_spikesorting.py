@@ -3,8 +3,10 @@ from collections import namedtuple
 import datajoint as dj
 import numpy as np
 from spyglass.common import IntervalList
-from spyglass.spikesorting import (SpikeSortingRecording, CuratedSpikeSorting, WaveformParameters,
-                                   AutomaticCurationParameters, MetricParameters, SortInterval)
+from spyglass.spikesorting.v0.spikesorting_recording import (
+    SpikeSortingRecording,)
+from spyglass.spikesorting.v0.spikesorting_curation import (
+    CuratedSpikeSorting, WaveformParameters, AutomaticCurationParameters, MetricParameters, SortInterval)
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase, ComputedBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_schema_table_names_from_file, \

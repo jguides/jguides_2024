@@ -22,6 +22,19 @@ from src.jguides_2024.utils.df_helpers import df_from_data_list, df_filter1_colu
 from src.jguides_2024.utils.save_load_helpers import unpickle_file, pickle_file
 
 
+# Set file limit
+import subprocess
+
+# Define the new file limit
+new_limit = 20480
+
+try:
+    subprocess.run(["ulimit", "-n", str(new_limit)], check=True, shell=True)
+    print(f"File limit set to {new_limit}")
+except subprocess.CalledProcessError as e:
+    print(f"Error setting file limit: {e}")
+
+
 # Define additional functions
 
 def _get_param_names(condition_name, time_bins_shorthand, cross_validation_table_name, covariates_shorthand):

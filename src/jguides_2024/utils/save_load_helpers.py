@@ -38,12 +38,19 @@ def append_iteration_num_to_file_name(file_name_base, save_dir):
 
 def get_file_contents(file_name, file_path=None):
 
+    # Get current directory so can change back to it
+    current_dir = os.getcwd()
+
+    # Change to directory with file if passed
     if file_path is not None:
         os.chdir(file_path)
 
     file_obj = open(file_name, "r")
     file_contents = file_obj.read()
     file_obj.close()
+
+    # Change back to current directory
+    os.chdir(current_dir)
 
     return file_contents
 

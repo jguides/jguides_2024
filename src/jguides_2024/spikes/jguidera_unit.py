@@ -3,7 +3,7 @@ import copy
 import datajoint as dj
 import numpy as np
 from spyglass.common import Electrode
-from spyglass.spikesorting import CuratedSpikeSorting
+from spyglass.spikesorting.v0.spikesorting_curation import CuratedSpikeSorting
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase, SelBase, ComputedBase

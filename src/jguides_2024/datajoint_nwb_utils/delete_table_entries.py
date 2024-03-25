@@ -1,15 +1,17 @@
 # Delete entries from downstream tables to avoid error when deleting from upstream tables
 
-from spyglass.spikesorting import (
-    Curation, SpikeSortingSelection, ArtifactDetectionSelection, SpikeSortingRecordingSelection)
+from spyglass.spikesorting.v0.spikesorting_artifact import ArtifactDetectionSelection
+from spyglass.spikesorting.v0.spikesorting_curation import Curation
+from spyglass.spikesorting.v0.spikesorting_recording import SpikeSortingRecordingSelection
+from spyglass.spikesorting.v0.spikesorting_sorting import SpikeSortingSelection
 
+from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector_embedding import FRVecEmb
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionSortGroup
 from src.jguides_2024.metadata.jguidera_epoch import EpochCohort
-from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector_embedding import FRVecEmb
 from src.jguides_2024.position_and_maze.jguidera_position import IntervalLinearizedPositionRelabel
 from src.jguides_2024.position_and_maze.jguidera_ppt import Ppt
-from src.jguides_2024.spikes.jguidera_spikes import EpochSpikeTimes
 from src.jguides_2024.spike_sorting_curation.jguidera_spikesorting import SpikeSortingRecordingCohortParams
+from src.jguides_2024.spikes.jguidera_spikes import EpochSpikeTimes
 from src.jguides_2024.time_and_trials.jguidera_trials_pool import TrialsPool
 
 

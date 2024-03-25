@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from replay_trajectory_classification.environments import Environment
 from spyglass.common.common_position import TrackGraph
-from spyglass.decoding.sorted_spikes import SortedSpikesClassifierParameters
+from spyglass.decoding.v0.sorted_spikes import SortedSpikesClassifierParameters
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_reliability_paper_nwb_file_names
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_schema_table_names_from_file, \
