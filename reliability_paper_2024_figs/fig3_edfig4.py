@@ -145,6 +145,7 @@ populated_keys = ElNet().print_populated(return_keys=True, populate_tables=popul
 
 # Load or create data
 # Indicate whether to load just data to generate group summary plots (group_data_quick_load = True), or rawer data
+# (group_data_quick_load = False)
 group_data_quick_load = False
 # Indicate whether to restrict to single contingency used in example unit plots (fast to load)
 restrict_single_contingency = False
@@ -320,7 +321,7 @@ if not group_data_quick_load:
     sigma = 5  # samples. e.g. 20 ms bins x 5 samples = 100ms. bin size in: glm_container.glm_params
     similarity_metrics = ["correlation"]
     test_mode = False
-    save_fig = True
+    save_fig = False
 
     unit_names_map = get_unit_names_map(nwb_file_name, epochs_id)
 

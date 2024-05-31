@@ -8,7 +8,7 @@ analysis_dir = '/home/jguidera/Src/jguides_2024'
 os.chdir(analysis_dir)
 from src.jguides_2024.utils.vector_helpers import unpack_single_element
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_reliability_paper_nwb_file_names, get_plot_marker
-from src.jguides_2024.metadata.jguidera_epoch import EpochsDescriptions, EpochsDescription, RunEpoch
+from src.jguides_2024.metadata.jguidera_epoch import EpochsDescriptions, RunEpoch
 from src.jguides_2024.task_event.jguidera_task_performance import AlternationTaskPerformanceStatistics
 from src.jguides_2024.utils.plot_helpers import plot_spanning_line, format_ax, save_figure
 
@@ -46,12 +46,7 @@ for subject_id_idx, (subject_id, nwb_file_names) in enumerate(nwb_file_names_map
     for nwb_file_name, num_epochs in zip(nwb_file_names, num_epochs_per_day):
 
         # Get valid single contingency epochs for this nwb file
-        epochs_descriptions = (EpochsDescriptions() & {
-            "nwb_file_name": nwb_file_name, "epochs_description_name": "valid_single_contingency_runs"}).fetch1(
-            "epochs_descriptions")
-        epochs = [
-            (EpochsDescription & {"nwb_file_name": nwb_file_name, "epochs_description": epochs_description}).get_epoch()
-            for epochs_description in epochs_descriptions]
+        epochs = EpochsDescriptions().get_epochs(nwb_file_name, "valid_single_contingency_runs")
 
         # Get performance during these epochs
         key = {"nwb_file_name": nwb_file_name}

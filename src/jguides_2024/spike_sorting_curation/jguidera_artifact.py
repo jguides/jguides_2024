@@ -484,7 +484,7 @@ def populate_ArtifactDetectionParameters():
     global_artifact_detection_params = return_global_artifact_detection_params()
     for artifact_params_name, artifact_params in global_artifact_detection_params.items():
         for prefix in ["", "group_"]:
-            nd.spikesorting.ArtifactDetectionParameters.insert1(
+            nd.spikesorting.v0.spikesorting_artifact.ArtifactDetectionParameters.insert1(
                 {"artifact_params_name": prefix + artifact_params_name, "artifact_params": artifact_params},
                 skip_duplicates=True)
 

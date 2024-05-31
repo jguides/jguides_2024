@@ -1839,7 +1839,7 @@ class PathWellPopSummBase(ComputedBase):
                 ave_conf_df, {**condition_key, **{"alpha": alpha}}).set_index(
                 vals_index_name).sort_index().reset_index()
 
-            # Continue if no entry
+            # Handle case of no entry
             if len(df_subset) == 0:
                 continue
 

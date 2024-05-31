@@ -95,7 +95,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
         # Define a first set of parameters, to be used with all units
         # get param names outside loops to save compute
         min_epoch_mean_firing_rate = .1
-        primary_kernel_sds = [.1]
+        primary_kernel_sds = [.1, .2]
         primary_res_epoch_spikes_sm_param_names = [
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds]
         primary_time_rel_wa_dig_single_axis_param_names = [
@@ -122,7 +122,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
         primary_features_2.pop("time_rel_wa_fr_vec_param_name")
         primary_time_rel_wa_fr_vec_param_names_2 = set(TimeRelWAFRVecParams().fetch(
                 "time_rel_wa_fr_vec_param_name"))
-        primary_kernel_sds_2 = [.1]
+        primary_kernel_sds_2 = [.1, .2]
         primary_res_epoch_spikes_sm_param_names_2 = [
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds_2]
         primary_time_rel_wa_dig_single_axis_param_names_2 = [
@@ -453,7 +453,7 @@ class TimeRelWAFRVecAveBase:
 
     @staticmethod
     def get_valid_covariate_bin_nums(key):
-        # Important to pass full key because bins depend on file in this cas
+        # Important to pass full key because bins depend on file in this case
         return TimeRelWADigSingleAxisParams().get_valid_bin_nums(key)
 
     def get_bin_centers_map(self):

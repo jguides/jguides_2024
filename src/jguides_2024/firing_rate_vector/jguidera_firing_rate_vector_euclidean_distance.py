@@ -91,8 +91,12 @@ class FRVecEucDist(ComputedBase):
         # Store vector with concatenated time samples (corresponding to distance array columns and rows) in df
         time_df = pd.DataFrame({dfs.fr_concat_df.index.name: dfs.fr_concat_df.index})
 
+        # Since currently cannot make analysis nwbf with df index, remove index from dfs.epoch_vector
+        column_name = "epoch"
+        epoch_df = pd.DataFrame({column_name: dfs.epoch_vector[column_name].values})
+
         # Insert into main table
-        insert_analysis_table_entry(self, [distance_df, time_df, dfs.epoch_vector], key)
+        insert_analysis_table_entry(self, [distance_df, time_df, epoch_df], key)
 
         # Insert into part table
         for part_key in ResTimeBinsPoolCohortParams().get_keys_with_cohort_params(key):

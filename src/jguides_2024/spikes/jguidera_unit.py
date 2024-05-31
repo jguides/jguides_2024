@@ -5,7 +5,7 @@ import numpy as np
 from spyglass.common import Electrode
 from spyglass.spikesorting.v0.spikesorting_curation import CuratedSpikeSorting
 
-from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id
+from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, get_sort_group_unit_id
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase, SelBase, ComputedBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert1_print, \
     get_table_secondary_key_names, get_unit_name, split_unit_names, \
@@ -280,14 +280,17 @@ class BrainRegionUnitsParams(SecKeyParamsBase):
 
     @classmethod
     def _check_params(cls, key):
+        # Check that parameters are valid
+
         # Check that unit subset size is None if unit subset is False
         if "unit_subset" in key:
             if not key["unit_subset"] and key["unit_subset_size"] is not None:
                 raise Exception(f"unit_subset_size must be None if no unit subset")
+
         # Check unit_subset_type valid
-        check_membership(
-            [key["unit_subset_type"]], cls._valid_unit_subset_type(), "passed unit subset type",
-            "valid unit subset types")
+        cls._check_unit_subset_type(key["unit_subset_type"])
+
+        # If unit_subset_type all, check that unit_subset_size and unit_subset_iteration are None
         if key["unit_subset_type"] == "all":
             if not all([x is None for x in [key["unit_subset_size"], key["unit_subset_iteration"]]]):
                 raise Exception(f"unit_subset_size and unit_subset_iteration must be None if unit_subset_type is all")
@@ -298,7 +301,14 @@ class BrainRegionUnitsParams(SecKeyParamsBase):
 
     @staticmethod
     def _combination_param_sets():
-        return [[True, "target_region", None, None]] + [
+        # Return settings for a subset of secondary keys in this table
+
+        # In the return array, each entry specifies: unit_subset, unit_subset_type, unit_subset_size,
+        # and unit_subset_iteration (the last four secondary keys of this table)
+        return [
+            # subset of units in target region
+            [True, "target_region", None, None]] + [
+            # random subsample of 50 units in target region
             [True, "rand_target_region", 50, unit_subset_num] for unit_subset_num in np.arange(0, 10)]
 
     def _default_params(self):
@@ -339,17 +349,34 @@ class BrainRegionUnitsParams(SecKeyParamsBase):
             nwb_file_name, brain_region_units_param_name)).fetch1("epochs_id")
 
     @staticmethod
-    def _valid_unit_subset_type():
-        return ["all", "rand", "target_region", "rand_target_region"]
+    def _check_unit_subset_type(unit_subset_type):
+        # Check that unit subset type is valid (accounted for in other code)
+
+        # Pass check if unit subset type is one of the following
+        valid_unit_subset_types = ["all", "target_region", "rand_target_region"]
+        if unit_subset_type in valid_unit_subset_types:
+            return True
+
+        # Pass check if unit subset type describes target_region minus one unit
+        prefix = "target_region_except_"
+        if unit_subset_type.startswith(prefix):
+            # Ensure can get sort group and unit ID from unit name
+            unit_name = unit_subset_type.split(prefix)[-1]
+            _, _ = get_sort_group_unit_id(unit_name)
+            return True
+
+        else:
+            raise Exception(f"unit_subset_type not accounted for")
 
     def _make_param_name(self, secondary_key_subset_map, separating_character="_", tolerate_non_unique=True):
+        # Make parameter name
+
         # Check inputs
         # ...Check that exactly the table secondary keys used to make param name were passed
         check_set_equality(secondary_key_subset_map.keys(), self._param_name_secondary_key_columns(),
                            "passed secondary key subset keys", "table secondary key names")
         # ...Check unit subset type valid
-        check_membership([secondary_key_subset_map["unit_subset_type"]], self._valid_unit_subset_type(),
-                         "list with passed unit subset type", "available unit subset types")
+        self._check_unit_subset_type(secondary_key_subset_map["unit_subset_type"])
 
         # Make param name using secondary key values
         # Approach: only include unit_subset_size and unit_subset_iteration if random subset
@@ -640,6 +667,9 @@ class BrainRegionUnits(ComputedBase):
                 # Otherwise use random sample
                 sort_group_unit_ids_map = EpsUnits.unit_names_to_sort_group_unit_ids_map(unit_names_sample)
 
+        else:
+            raise Exception(f"unit_subset_type {unit_subset_type} not accounted for in code")
+
         # Insert into main table
         insert1_print(self, {**key, **{"sort_group_unit_ids_map": sort_group_unit_ids_map}})
 
@@ -749,6 +779,7 @@ class BrainRegionUnitsCohortType(SecKeyParamsBase):
         eps_units_param_name = EpsUnitsParams().lookup_param_name([min_epoch_mean_firing_rate])
 
         # no unit subset
+        # TODO: currently in BrainRegionUnitsParams table, corresponding entry has unit_subset is 1. change this to match
         keys.append({
             "eps_units_param_name": eps_units_param_name,
             "unit_subset": 0,

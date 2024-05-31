@@ -462,6 +462,25 @@ class EpochsDescriptions(dj.Manual):
             nwb_file_name_epochs_map[nwb_file_name] = epochs
         return nwb_file_name_epochs_map
 
+    def get_epochs(self, nwb_file_name=None, epochs_description_name=None):
+        # Get epochs for a given nwb_file_name and epochs_description_name
+
+        # Get inputs if not passed
+        if nwb_file_name is None:
+            nwb_file_name = self.fetch1("nwb_file_name")
+        if epochs_description_name is None:
+            epochs_description_name = self.fetch1("epochs_description_name")
+
+        # Get epochs descriptions
+        epochs_descriptions = (self & {
+            "nwb_file_name": nwb_file_name, "epochs_description_name": epochs_description_name}).fetch1(
+            "epochs_descriptions")
+
+        # Return epochs
+        return [
+            (EpochsDescription & {"nwb_file_name": nwb_file_name, "epochs_description": epochs_description}).get_epoch()
+            for epochs_description in epochs_descriptions]
+
 
 class NwbfSetBase(dj.Manual):
 

@@ -107,7 +107,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         # ...we want to populate using the above across multiple path_fr_vec_param_names
         primary_features_2 = copy.deepcopy(primary_features)
         primary_path_fr_vec_param_names_2 = ["none", "even_odd_trials", "correct_incorrect_trials"]
-        primary_kernel_sds_2 = [.1]
+        primary_kernel_sds_2 = [.1, .2]
 
         # Define nwb file names
         nwb_file_names = get_jguidera_nwbf_names()

@@ -345,7 +345,8 @@ def make_curation_data(
                 data_subset["waveform_window"] = np.arange(-we.nbefore, we.nafter)
                 # IMPORTANT NOTE: WAVEFORMS AND SPIKE TIMES ARE SUBSAMPLED (SEEMS MAX IS AT 20000). This
                 # happens in line below.
-                waveform_data = {unit_id: we.get_waveforms(unit_id, with_index=True) for unit_id in valid_unit_ids}
+                waveform_data = {unit_id: we.get_waveforms(
+                    unit_id, with_index=True, force_dense=True) for unit_id in valid_unit_ids}
                 spike_samples = {unit_id: we.sorting.get_unit_spike_train(unit_id=unit_id) for unit_id in valid_unit_ids}
                 # TODO: check line below
                 data_subset["waveforms"] = {unit_id: np.swapaxes(wv[0], 0, 2) for unit_id, wv in waveform_data.items()}

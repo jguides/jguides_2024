@@ -120,7 +120,8 @@ class TimeRelWA(ComputedBase):
 
     def delete_(self, key=None, safemode=True):
         # Delete downstream entries first
-        from src.jguides_2024.jguidera_firing_rate_difference_vector_similarity_ave import FRDiffVecCosSimWANnAve
+        from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_difference_vector_similarity_ave import \
+            FRDiffVecCosSimWANnAve
         delete_(self, [FRDiffVecCosSimWANnAve], key, safemode)
 
 

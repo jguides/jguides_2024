@@ -677,7 +677,7 @@ class DioWellDDTrials(WellEventTrialsBaseExt):
             trials_df = df_filter_columns_isin(trials_df, trial_feature_map)
 
         # Define trial intervals
-        trial_intervals = list(zip(trials_df["trial_start_times"], trials_df["trial_end_times"]))
+        trial_intervals = np.asarray(list(zip(trials_df["trial_start_times"], trials_df["trial_end_times"])))
 
         # Get the epoch trial numbers of the well arrival that is encompassed by the trial
         trial_end_epoch_trial_numbers = trials_df.trial_end_epoch_trial_numbers

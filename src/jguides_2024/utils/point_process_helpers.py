@@ -12,7 +12,7 @@ from src.jguides_2024.utils.stats_helpers import mean_squared_error
 
 def event_times_in_intervals_bool(event_times, valid_time_intervals):
     """
-    Filter event times for those within valid_intervals
+    Identify event times within valid_intervals
     :param event_times: array-like with times of events
     :param valid_time_intervals: nested list with intervals for valid times
     :return: boolean indicating indices in event_times within valid_time_intervals

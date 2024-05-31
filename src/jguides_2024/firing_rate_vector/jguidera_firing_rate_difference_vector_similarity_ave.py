@@ -186,7 +186,7 @@ class FRDiffVecCosSimVarNnAveSelBase(SelBase):
             "epoch_100ms")
         # ...Collect valid params
         valid_params = {
-            "res_epoch_spikes_sm_param_name": ["0.1"], "zscore_fr": [0], "res_time_bins_pool_cohort_param_name":
+            "res_epoch_spikes_sm_param_name": ["0.1"], "zscore_fr": [0, 1], "res_time_bins_pool_cohort_param_name":
                 [res_time_bins_pool_cohort_param_name]}
 
         # Get keys from intersection of upstream tables

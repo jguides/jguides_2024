@@ -380,8 +380,8 @@ class FRVec(ComputedBase):
             for brain_region in brain_regions]))
         return pd.concat(firing_rate_dfs), unpack_single_df(time_vector_dfs)
 
-    def get_mua(self):
-        fr_df, time_vector = self.firing_rate_across_sort_groups()
+    def get_mua(self, key):
+        fr_df, time_vector = self.firing_rate_across_sort_groups(key)
         return pd.Series(np.sum(np.vstack(fr_df["firing_rate"]), axis=0) / len(fr_df), index=time_vector)
 
     def delete_(self, key, safemode=True):
