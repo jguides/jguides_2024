@@ -631,17 +631,25 @@ class CovariateFRVecAveBase(ComputedBase):
                 arr = np.zeros((max_x_1 - min_x_1 + 1, max_x_2 - min_x_2 + 1
                                 ))  # add one to account for zero, e.g. from -9 to 20 there are 30 values (20 + 9 + 1)
                 arr[:] = np.nan
+
                 # Populate array with metric
                 for i, j, z in list(zip_df_columns(df_subset, x_names + [self._metric_column_name(metric_name)])):
-                    # Order x1 and x2. Rationale:
-                    # x1 and x2 not consistently ordered in metric_df (though note we do not expect duplicates of
-                    # data, and checked there were none above if current code allowed), but we want all the values
-                    # for a single x1 / x2 combination in one place
-                    i1, i2 = min_max([i, j])
-                    # ...shift x values (one indexed) to get indices
+
+                    # If label_1 and label_2 are the same, and epoch_1 and epoch_2 are the same,
+                    # order x1 and x2. Rationale: the order of x1 and x2 is
+                    # arbitrary in this case, so choose an interpretable ordering with x1 <= x2
+                    if label_1 == label_2:
+                        i1, i2 = min_max([i, j])
+                    else:
+                        i1, i2 = [i, j]
+
+                    # Shift x values (one indexed) to get indices
                     i1 -= min_x_1
                     i2 -= min_x_2
+
+                    # Store value in array
                     arr[int(i1), int(i2)] = z
+
                 arrs.append(arr)  # store array
 
             # Take first array if only one
