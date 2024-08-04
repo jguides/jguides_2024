@@ -219,8 +219,8 @@ class DioWellTrials(ComputedBase):
         leave_bool = well_durations < delay_duration
         stay_bool = well_durations >= delay_duration
 
-        # If rat did not depart from well on final trial (final departure time is nan),
-        # then we must figure out if rat left early or not using a different strategy.
+        # If rat did not depart from well on final trial (final departure time is nan and therefore well duration is
+        # nan), then we must figure out if rat left early or not using a different strategy.
         # Case 1: epoch ended before delay period ended. In this case, we cannot say whether rat stayed or left
         # during the delay, so we do nothing further since stay / leave bool will both
         # already be False in this case.
@@ -230,8 +230,13 @@ class DioWellTrials(ComputedBase):
         # ...Set final value of stay_bool to True if rat stayed at well on final trial
         # get start of delay: time when rat arrives to well
         delay_start_times = self.fetch1("well_arrival_times")
-        if epoch_end_time - delay_start_times[-1] >= delay_duration:
+        if np.logical_and(
+                np.isnan(well_durations[-1]), epoch_end_time - delay_start_times[-1] >= delay_duration):
             stay_bool[-1] = True
+
+        # Ensure no overlap between stay and leave trials
+        if np.sum(stay_bool * leave_bool) > 0:
+            raise Exception("stay and leave trials are overlapping; this should not be the case")
 
         # Define valid bool based on whether want only stay trials or only leave trials
         if stay_leave_trial_type == "stay_trial":
