@@ -1010,8 +1010,16 @@ class MazePathWell:
     """
 
     @staticmethod
-    def get_rewarded_path_name_tuples(nwb_file_name,
-                                      epoch):
+    def get_rewarded_path_name_tuples(nwb_file_name=None, epoch=None, contingency=None):
+
+        # Check inputs (must pass either nwb_file_name and epoch, OR contingency
+        if (nwb_file_name is not None and epoch is not None) + (contingency is not None) != 1:
+            raise Exception(f"must pass either nwb_file_name and epoch, OR contingency")
+
+        # Get contingency if not passed
+        if contingency is None:
+            contingency = TaskIdentification().get_contingency(nwb_file_name, epoch)
+
         previous_well, current_well, performance_outcomes = AlternationTaskRule().fetch(
             "previous_well", "current_well", "performance_outcome")
         # Check outcomes begin with "correct", "incorrect" or "neutral", followed by "_", as parsing depends on this
@@ -1025,25 +1033,26 @@ class MazePathWell:
                                 outcome.split("_")[0] == "correct"]
         abstract_path_name_tuples = (list(zip(previous_well[correct_outcome_idxs],
                                               current_well[correct_outcome_idxs])))
-        contingency = TaskIdentification().get_contingency(nwb_file_name, epoch)
+
         potential_active_contingencies = (ContingencyActiveContingenciesMap &
                                           {"contingency": contingency}).fetch1("active_contingencies")
+
         return [tuple([AlternationTaskWellIdentities().get_well_name(w, active_contingency) for w in t])
                 for active_contingency in potential_active_contingencies for t in abstract_path_name_tuples]
 
     @classmethod
-    def get_well_names(cls, nwb_file_name, epoch, rewarded_wells=False, well_order=None):
+    def get_well_names(cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_wells=False, well_order=None):
         # Get well names for fork maze
 
         # Check inputs
-        if rewarded_wells and (nwb_file_name is None or epoch is None):
-            raise Exception(f"If rewarded_wells is True, must passed both nwb_file_name and epoch")
+        if rewarded_wells and ((nwb_file_name is not None and epoch is not None) + (contingency is not None) != 1):
+            raise Exception(f"If rewarded_wells is True, must pass either nwb_file_name and epoch, OR contingency")
         # check valid well order
         check_membership([well_order], ["left_right", None])
 
         # Get potentially rewarded wells if indicated
         if rewarded_wells:
-            _, destination_wells = zip(*cls.get_rewarded_path_name_tuples(nwb_file_name, epoch))
+            _, destination_wells = zip(*cls.get_rewarded_path_name_tuples(nwb_file_name, epoch, contingency))
             well_names = np.unique(destination_wells)
         # Otherwise get all wells
         else:
@@ -1066,11 +1075,17 @@ class MazePathWell:
         return unique_in_order(all_well_names)
 
     @classmethod
-    def get_rewarded_path_names(cls, nwb_file_name, epoch, organize_by_same_turn=False, start_well=None):
+    def get_rewarded_path_names(
+            cls, nwb_file_name=None, epoch=None, contingency=None, organize_by_same_turn=False, start_well=None):
+
+        # Check inputs (must pass either nwb_file_name and epoch, OR contingency
+        if (nwb_file_name is not None and epoch is not None) + (contingency is not None) != 1:
+            raise Exception(f"must pass either nwb_file_name and epoch, OR contingency")
+
         # Get names of potentially rewarded path in a contingency
         if organize_by_same_turn:
-            return np.concatenate(cls.get_same_turn_path_names(nwb_file_name, epoch, rewarded_paths=True))
-        path_name_tuples = cls.get_rewarded_path_name_tuples(nwb_file_name, epoch)
+            return np.concatenate(cls.get_same_turn_path_names(nwb_file_name, epoch, contingency, rewarded_paths=True))
+        path_name_tuples = cls.get_rewarded_path_name_tuples(nwb_file_name, epoch, contingency)
         rewarded_path_names = convert_path_names(path_name_tuples)
         if start_well is not None:
             return [x for x in rewarded_path_names if x.split("_")[0] == start_well]
@@ -1090,15 +1105,15 @@ class MazePathWell:
         return unique_in_order(np.concatenate(rewarded_paths_list, dtype=object))
 
     @classmethod
-    def get_rewarded_paths_turn_map(cls, nwb_file_name, epoch):
+    def get_rewarded_paths_turn_map(cls, nwb_file_name=None, epoch=None, contingency=None):
         path_turn_direction_map = RewardWellPathTurnDirection.fetch1("reward_well_path_turn_direction_map")
         return {path_name: path_turn_direction_map[path_name]
-                for path_name in cls.get_rewarded_path_names(nwb_file_name, epoch)}
+                for path_name in cls.get_rewarded_path_names(nwb_file_name, epoch, contingency)}
 
     @classmethod
-    def get_same_turn_path_names(cls, nwb_file_name, epoch, rewarded_paths=False):
+    def get_same_turn_path_names(cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_paths=False):
         if rewarded_paths:
-            paths_turn_map = cls.get_rewarded_paths_turn_map(nwb_file_name, epoch)
+            paths_turn_map = cls.get_rewarded_paths_turn_map(nwb_file_name, epoch, contingency)
         else:
             paths_turn_map = RewardWellPathTurnDirection.fetch1("reward_well_path_turn_direction_map")
         return array_to_tuple_list(pairs_keys_same_value(paths_turn_map))
@@ -1106,13 +1121,14 @@ class MazePathWell:
     @classmethod
     def get_same_turn_path_names_across_epochs(
             cls, nwb_file_name, epochs, rewarded_paths=False, collapse=False, collapsed_path_order=None):
+
         # Check inputs
         # check collapsed_path_order valid
         check_membership([collapsed_path_order], ["left_right", None])
 
         # Get same turn path name pairs for each epoch
         path_names = np.concatenate([cls.get_same_turn_path_names(
-            nwb_file_name, epoch, rewarded_paths) for epoch in epochs], dtype=object)
+            nwb_file_name, epoch, rewarded_paths=rewarded_paths) for epoch in epochs], dtype=object)
         # Get unique path name pairs across epochs, preserving order
         path_names = unique_in_order(path_names)
         # Collapse into one list if indicated
@@ -1131,15 +1147,15 @@ class MazePathWell:
         return path_names
 
     @classmethod
-    def get_different_turn_path_names(cls, nwb_file_name, epoch, rewarded_paths=False):
+    def get_different_turn_path_names(cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_paths=False):
         if rewarded_paths:
-            paths_turn_map = cls.get_rewarded_paths_turn_map(nwb_file_name, epoch)
+            paths_turn_map = cls.get_rewarded_paths_turn_map(nwb_file_name, epoch, contingency)
         else:
             paths_turn_map = RewardWellPathTurnDirection.fetch1("reward_well_path_turn_direction_map")
         return pairs_keys_different_value(paths_turn_map)
 
     @classmethod
-    def get_different_turn_well_path_names(cls, nwb_file_name, epoch, rewarded_paths=False):
+    def get_different_turn_well_path_names(cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_paths=False):
         """
         Get paths with different set of turns and different start/end wells
         :param nwb_file_name: nwb file name
@@ -1148,7 +1164,8 @@ class MazePathWell:
         :return:
         """
 
-        different_turn_path_names = np.asarray(cls.get_different_turn_path_names(nwb_file_name, epoch, rewarded_paths))
+        different_turn_path_names = np.asarray(cls.get_different_turn_path_names(
+            nwb_file_name, epoch, contingency, rewarded_paths=rewarded_paths))
         different_well_bool = [all([path_1_well != path_2_well
                                     for path_1_well, path_2_well in np.asarray(convert_path_names(path_names)).T])
                                for path_names in different_turn_path_names]  # paths that do not share start/end well
@@ -1157,28 +1174,38 @@ class MazePathWell:
         return [(x1, x2) for x1, x2 in different_turn_well_path_names]  # convert back to tuple
 
     @classmethod
-    def get_path_with_home_well_at_position(cls, nwb_file_name, epoch, position, as_dict=False):
-        contingency = TaskIdentification().get_contingency(nwb_file_name, epoch)
+    def get_path_with_home_well_at_position(
+            cls, position, nwb_file_name=None, epoch=None, contingency=None, as_dict=False):
+
+        # Check inputs (must pass either nwb_file_name and epoch, OR contingency
+        if (nwb_file_name is not None and epoch is not None) + (contingency is not None) != 1:
+            raise Exception(f"must pass either nwb_file_name and epoch, OR contingency")
+
+        # Get contingency if not passed
+        if contingency is None:
+            contingency = TaskIdentification().get_contingency(nwb_file_name, epoch)
+
         potential_active_contingencies = (ContingencyActiveContingenciesMap &
                                             {"contingency": contingency}).fetch1("active_contingencies")
         home_well_names = [AlternationTaskWellIdentities().get_well_name("home_well", active_contingency)
                            for active_contingency in potential_active_contingencies]
-        path_names = {home_well_name: [path_name for path_name in cls.get_rewarded_path_names(nwb_file_name, epoch)
+        path_names = {home_well_name: [path_name for path_name in cls.get_rewarded_path_names(contingency=contingency)
                 if path_name.split("_to_")[position] == home_well_name] for home_well_name in home_well_names}
+
         # Return in dictionary with home well name as key if indicated, otherwise concatenate all path names
         if as_dict:
             return path_names
         return np.concatenate(list(path_names.values()))
 
     @classmethod
-    def get_outbound_path_names(cls, nwb_file_name, epoch, as_dict=False):
+    def get_outbound_path_names(cls, nwb_file_name=None, epoch=None, contingency=None, as_dict=False):
         position = 0
-        return cls.get_path_with_home_well_at_position(nwb_file_name, epoch, position, as_dict)
+        return cls.get_path_with_home_well_at_position(position, nwb_file_name, epoch, contingency, as_dict=as_dict)
 
     @classmethod
-    def get_inbound_path_names(cls, nwb_file_name, epoch, as_dict=False):
+    def get_inbound_path_names(cls, nwb_file_name=None, epoch=None, contingency=None, as_dict=False):
         position = 1
-        return cls.get_path_with_home_well_at_position(nwb_file_name, epoch, position, as_dict)
+        return cls.get_path_with_home_well_at_position(position, nwb_file_name, epoch, contingency, as_dict=as_dict)
 
     @classmethod
     def get_path_fns_map(cls):
@@ -1186,24 +1213,55 @@ class MazePathWell:
         return {"same_turn": cls.get_same_turn_path_names,
                 "same_turn_even_odd_trials": cls.get_same_turn_path_names,
                 "same_turn_even_odd_stay_trials": cls.get_same_turn_path_names,
+                "same_turn_even_odd_correct_stay_trials": cls.get_same_turn_path_names,
+
                 "different_turn_well": cls.get_different_turn_well_path_names,
                 "different_turn_well_even_odd_trials": cls.get_different_turn_well_path_names,
                 "different_turn_well_even_odd_stay_trials": cls.get_different_turn_well_path_names,
+                "different_turn_well_even_odd_correct_stay_trials": cls.get_different_turn_well_path_names,
+
                 "inbound": cls.get_inbound_path_names,
+
+                "inbound_even_odd_correct_stay_trials": cls.get_inbound_path_names,
+
                 "outbound": cls.get_outbound_path_names,
+
                 "outbound_correct_correct_trials": cls.get_outbound_path_names,
                 "outbound_correct_incorrect_trials": cls.get_outbound_path_names,
                 "outbound_incorrect_incorrect_trials": cls.get_outbound_path_names,
+
+                "outbound_correct_correct_stay_trials": cls.get_outbound_path_names,
+                "outbound_correct_incorrect_stay_trials": cls.get_outbound_path_names,
+                "outbound_incorrect_incorrect_stay_trials": cls.get_outbound_path_names,
+
+                "outbound_even_odd_correct_stay_trials": cls.get_outbound_path_names,
+
                 "same_path_outbound_correct_correct_trials": cls.get_outbound_path_names,
+                "same_path_outbound_correct_incorrect_trials": cls.get_outbound_path_names,
+                "same_path_outbound_prev_correct_incorrect_trials": cls.get_outbound_path_names,
+
+                "same_path_outbound_correct_correct_stay_trials": cls.get_outbound_path_names,
+
                 "same_path": cls.get_rewarded_path_names,
+
                 "same_path_even_odd_trials": cls.get_rewarded_path_names,
                 "same_path_even_odd_stay_trials": cls.get_rewarded_path_names,
+                "same_path_even_odd_correct_stay_trials": cls.get_rewarded_path_names,
+
                 "same_path_stay_leave_trials": cls.get_rewarded_path_names,
                 "same_path_stay_stay_trials": cls.get_rewarded_path_names,
                 "same_path_leave_leave_trials": cls.get_rewarded_path_names,
+
                 "same_path_correct_correct_trials": cls.get_rewarded_path_names,
                 "same_path_correct_incorrect_trials": cls.get_rewarded_path_names,
                 "same_path_incorrect_incorrect_trials": cls.get_rewarded_path_names,
+
+                "same_path_correct_correct_stay_trials": cls.get_rewarded_path_names,
+                "same_path_correct_incorrect_stay_trials": cls.get_rewarded_path_names,
+                "same_path_incorrect_incorrect_stay_trials": cls.get_rewarded_path_names,
+
+                "same_path_prev_correct_incorrect_trials": cls.get_rewarded_path_names,
+
                 "different_path": cls.get_rewarded_path_names,
                 "same_end_well_even_odd_trials": cls.get_rewarded_path_names,
                 "same_end_well_even_odd_stay_trials": cls.get_rewarded_path_names,
@@ -1283,18 +1341,23 @@ class MazePathWell:
         return list(text_map.values())
 
     @staticmethod
-    def correct_incorrect_trial_text(text_type=None):
-        text_map = {"correct": "correct_trial", "incorrect": "incorrect_trial"}
+    def correct_incorrect_trial_text(text_type=None, previous_trial=False):
+        previous_trial_text = ""
+        if previous_trial:
+            previous_trial_text = "previous_"
+        text_map = {
+            "correct": f"{previous_trial_text}correct_trial", "incorrect": f"{previous_trial_text}incorrect_trial"}
         if text_type is not None:
             return text_map[text_type]
         return list(text_map.values())
 
     @classmethod
-    def get_correct_incorrect_trial_text(cls, path_name, correct_incorrect_text=None):
-        # Make text like "{path_name}_{correct or incorrect}", e.g. "left_well_to_handle_well_correct"
+    def get_correct_incorrect_trial_text(cls, path_name, correct_incorrect_text=None, previous_trial=False):
+        # Make text like "{path_name}_{correct or incorrect}", e.g. "left_well_to_handle_well_correct" if
+        # current trial, or "{path_name}_previous_{correct or incorrect}" if previous trial
 
         # Check correct/incorrect text valid
-        check_membership([correct_incorrect_text], cls.correct_incorrect_trial_text())
+        check_membership([correct_incorrect_text], cls.correct_incorrect_trial_text(previous_trial=previous_trial))
 
         # Return path name and correct/incorrect text together
         return f"{path_name}_{correct_incorrect_text}"
@@ -1313,30 +1376,49 @@ class MazePathWell:
         # Note that option to include these suffixes symmetrically (e.g. (a, b) and (b, a)) is in
         # get_path_name_pair_types_map method (with include_reversed_pairs=True), which calls the current method.
         if name in [
-            "same_turn", "same_turn_even_odd_trials", "same_turn_even_odd_stay_trials", "different_turn_well",
-            "different_turn_well_even_odd_trials", "different_turn_well_even_odd_stay_trials"]:
-            param_names = ["nwb_file_name", "epoch", "rewarded_paths"]
+            "same_turn", "same_turn_even_odd_trials", "same_turn_even_odd_stay_trials",
+            "same_turn_even_odd_correct_stay_trials",
+            "different_turn_well",
+            "different_turn_well_even_odd_trials", "different_turn_well_even_odd_stay_trials",
+            "different_turn_well_even_odd_correct_stay_trials"
+        ]:
+            param_names = ["nwb_file_name", "epoch", "contingency", "rewarded_paths"]
             path_name_pairs = fn(**_get_param_names(params, param_names))
 
         elif name in [
-            "inbound", "outbound", "outbound_correct_correct_trials", "outbound_correct_incorrect_trials",
-            "outbound_incorrect_incorrect_trials"]:
-            param_names = ["nwb_file_name", "epoch"]
+            "inbound", "outbound",
+
+            "outbound_correct_correct_trials", "outbound_correct_incorrect_trials",
+            "outbound_incorrect_incorrect_trials",
+
+            "outbound_correct_correct_stay_trials", "outbound_correct_incorrect_stay_trials",
+            "outbound_incorrect_incorrect_stay_trials",
+
+            "inbound_even_odd_correct_stay_trials", "outbound_even_odd_correct_stay_trials",
+
+        ]:
+            param_names = ["nwb_file_name", "epoch", "contingency"]
             fn_params = _get_param_names(params, param_names)
             fn_params.update({"as_dict": True})
             path_name_pairs_map = fn(**fn_params)  # inbound or outbound path names as dictionary
             path_name_pairs = array_to_tuple_list(list(path_name_pairs_map.values()))  # convert to list of tuples
 
         elif name in [
-            "same_path", "same_path_even_odd_trials", "same_path_even_odd_stay_trials", "same_path_stay_leave_trials",
+            "same_path", "same_path_even_odd_trials", "same_path_even_odd_stay_trials",
+            "same_path_even_odd_correct_stay_trials", "same_path_stay_leave_trials",
             "same_path_stay_stay_trials", "same_path_leave_leave_trials", "same_path_correct_incorrect_trials",
-            "same_path_correct_correct_trials", "same_path_incorrect_incorrect_trials",
-            "same_path_outbound_correct_correct_trials"]:
-            param_names = ["nwb_file_name", "epoch"]
+            "same_path_correct_correct_trials", "same_path_correct_correct_stay_trials",
+            "same_path_incorrect_incorrect_trials", "same_path_incorrect_incorrect_stay_trials",
+            "same_path_prev_correct_incorrect_trials",
+            "same_path_outbound_correct_incorrect_trials", "same_path_outbound_correct_correct_trials",
+            "same_path_outbound_correct_correct_stay_trials",
+            "same_path_outbound_prev_correct_incorrect_trials",
+            "same_path_correct_incorrect_stay_trials"]:
+            param_names = ["nwb_file_name", "epoch", "contingency"]
             path_name_pairs = [(x, x) for x in fn(**_get_param_names(params, param_names))]  # pairs of same path
 
         elif name == "different_path":
-            param_names = ["nwb_file_name", "epoch"]
+            param_names = ["nwb_file_name", "epoch", "contingency"]
             path_name_pairs = list(itertools.combinations(fn(**_get_param_names(params, param_names)), r=2))
 
         elif name in ["same_end_well_even_odd_trials", "same_end_well_even_odd_stay_trials"]:
@@ -1402,85 +1484,116 @@ class MazePathWell:
                  cls.get_even_odd_trial_name(cls.get_stay_leave_trial_path_name(x2, stay_text), even_odd_text=t2))
                  for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
 
-        # If want correct/incorrect trials, add correct and incorrect to path name
-        # ...correct and incorrect trials
-        elif any([x in name for x in [
-            "correct_incorrect_trials", "correct_correct_trials", "incorrect_incorrect_trials"]]):
-            if "correct_correct_trials" in name:
-                t1 = t2 = cls.correct_incorrect_trial_text("correct")
-            elif "incorrect_incorrect_trials" in name:
-                t1 = t2 = cls.correct_incorrect_trial_text("incorrect")
-            elif "correct_incorrect_trials" in name:
-                t1, t2 = cls.correct_incorrect_trial_text()
+        # If want even vs. odd stay correct trials, add stay to path names, then correct, then even and odd
+        elif "even_odd_correct_stay_trials" in name:
+            stay_text = cls.stay_leave_trial_text("stay")
+            correct_text = cls.correct_incorrect_trial_text("correct")
+            t1, t2 = cls.even_odd_trial_text()
             suffix_sets = _get_suffix_sets(t1, t2, symmetric_suffix)
             return [
-                (cls.get_correct_incorrect_trial_text(x1, t1),
-                 cls.get_correct_incorrect_trial_text(x2, t2)) for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
+                (cls.get_even_odd_trial_name(cls.get_correct_incorrect_trial_text(
+                    cls.get_stay_leave_trial_path_name(x1, stay_text), correct_text), even_odd_text=t1),
+                 cls.get_even_odd_trial_name(cls.get_correct_incorrect_trial_text(
+                     cls.get_stay_leave_trial_path_name(x2, stay_text), correct_text), even_odd_text=t2))
+                for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
+
+        # If want correct/incorrect stay trials, add stay to path names, then correct and incorrect
+        # If want correct/incorrect trials, add correct and incorrect to path name
+        elif any([x in name for x in [
+            "correct_incorrect_trials", "correct_correct_trials", "incorrect_incorrect_trials",
+            "correct_incorrect_stay_trials", "correct_correct_stay_trials", "incorrect_incorrect_stay_trials"
+        ]]):
+
+            previous_trial = False
+            if "prev_" in name:
+                previous_trial = True
+
+            if "correct_correct" in name:
+                t1 = t2 = cls.correct_incorrect_trial_text("correct", previous_trial)
+            elif "incorrect_incorrect" in name:
+                t1 = t2 = cls.correct_incorrect_trial_text("incorrect", previous_trial)
+            elif "correct_incorrect" in name:
+                t1, t2 = cls.correct_incorrect_trial_text(previous_trial=previous_trial)
+            else:
+                raise Exception(f"case not accounted for")
+
+            suffix_sets = _get_suffix_sets(t1, t2, symmetric_suffix)
+
+            stay_text = cls.stay_leave_trial_text("stay")
+
+            stay_trials_fn = return_input
+            if "stay_trials" in name:
+                stay_trials_fn = cls.get_stay_leave_trial_path_name
+
+            return [
+                (cls.get_correct_incorrect_trial_text(stay_trials_fn(x1, trial_text=stay_text), t1, previous_trial),
+                 cls.get_correct_incorrect_trial_text(stay_trials_fn(x2, trial_text=stay_text), t2, previous_trial))
+                for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
 
         # Otherwise return path name pairs unaltered
         return path_name_pairs
 
     @classmethod
     def get_path_name_pair_types_map(
-            cls, nwb_file_name, epochs, rewarded_paths=True, include_reversed_pairs=False, symmetric_suffix=False,
-            valid_names=None):
+            cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_paths=True, include_reversed_pairs=False,
+            symmetric_suffix=False, valid_names=None):
 
         # If rewarded_paths True, restrict to potentially rewarded paths
 
         # Initialize map
         path_name_pair_types_map = dict()
 
-        # Loop through epochs
-        for epoch in epochs:
+        # Get names for all possible pair types
+        names = cls.get_path_fns_map().keys()
 
-            # Initialize submap
-            path_name_pair_types_map[epoch] = dict()
+        # Restrict names if indicated
+        if valid_names is not None:
+            names = [x for x in names if x in valid_names]
 
-            # Get names for all possible pair types
-            names = cls.get_path_fns_map().keys()
+        # Loop through names
+        for name in names:
 
-            # Restrict names if indicated
-            if valid_names is not None:
-                names = [x for x in names if x in valid_names]
+            pair_types = cls._access_get_path_fn(name, {
+                "nwb_file_name": nwb_file_name, "epoch": epoch, "contingency": contingency,
+                "rewarded_paths": rewarded_paths, "symmetric_suffix": symmetric_suffix})
 
-            # Loop through names
-            for name in names:
+            # If include reversed pairs, then for each (a, b), add (b, a)
+            if include_reversed_pairs:
+                pair_types = add_reversed_pairs(pair_types)
 
-                pair_types = cls._access_get_path_fn(name, {
-                    "nwb_file_name": nwb_file_name, "epoch": epoch, "rewarded_paths": rewarded_paths,
-                    "symmetric_suffix": symmetric_suffix})
-
-                # If include reversed pairs, then for each (a, b), add (b, a)
-                if include_reversed_pairs:
-                    pair_types = add_reversed_pairs(pair_types)
-
-                # Add to map pair types for this epoch and name
-                path_name_pair_types_map[epoch][name] = pair_types
+            # Add to map pair types for this epoch and name
+            path_name_pair_types_map[name] = pair_types
 
         # Return map
         return path_name_pair_types_map
 
     @classmethod
-    def get_well_name_pair_types_map(cls, nwb_file_name, epochs, rewarded_wells=True):
+    def get_well_name_pair_types_map(cls, nwb_file_name=None, epoch=None, contingency=None, rewarded_wells=True):
+
+        # Check inputs (must pass either nwb_file_name and epoch, OR contingency
+        if (nwb_file_name is not None and epoch is not None) + (contingency is not None) != 1:
+            raise Exception(f"must pass either nwb_file_name and epoch, OR contingency")
+
         # If rewarded_wells True, restrict to potentially rewarded wells
-        well_name_pair_types_map = dict()
-        for epoch in epochs:
-            well_names = cls.get_well_names(nwb_file_name, epoch, rewarded_wells)
-            well_name_pair_types_map[epoch] = {
-                "same_well": [(x, x) for x in well_names], "different_well": list(
-                    itertools.combinations(well_names, r=2))}
-        return well_name_pair_types_map
+        well_names = cls.get_well_names(nwb_file_name, epoch, contingency, rewarded_wells=rewarded_wells)
+        return {
+            "same_well": [(x, x) for x in well_names], "different_well": list(
+                itertools.combinations(well_names, r=2))}
 
     @classmethod
     def get_end_well_name_pair_types_map(cls, nwb_file_name, epochs, rewarded_wells=True):
         # If rewarded_wells True, restrict to potentially rewarded wells
         well_name_pair_types_map = dict()
         for epoch in epochs:
-            well_names = cls.get_well_names(nwb_file_name, epoch, rewarded_wells)
+            well_names = cls.get_well_names(nwb_file_name, epoch, rewarded_wells=rewarded_wells)
             well_name_pair_types_map[epoch] = {
                 "same_well": [(x, x) for x in well_names], "different_well": list(
                     itertools.combinations(well_names, r=2))}
         return well_name_pair_types_map
+
+
+def return_input(x, **kwargs):
+    return x
 
 
 def populate_jguidera_maze(key=None, tolerate_error=False):

@@ -94,9 +94,18 @@ class TaskIdentification(ComputedBase):
     def single_contingencies():
         return ["centerAlternation", "handleAlternation"]
 
-    def is_single_contingency_epoch(self, nwb_file_name, epoch):
+    def is_single_contingency_epoch(self, nwb_file_name, epoch, valid_contingency=None):
+
+        # Check inputs
+        valid_contingencies = self.single_contingencies()
+        check_membership([valid_contingency], [None] + valid_contingencies)
+
         contingency = (self & {"nwb_file_name": nwb_file_name, "epoch": epoch}).fetch1("contingency")
-        return contingency in self.single_contingencies()
+
+        if valid_contingency is not None:
+            valid_contingencies = [valid_contingency]
+
+        return contingency in valid_contingencies
 
     def get_single_contingency_epoch_map(self, nwb_file_name, epochs=None):
         single_contingencies = self.single_contingencies()

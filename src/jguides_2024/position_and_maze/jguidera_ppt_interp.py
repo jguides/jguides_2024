@@ -92,7 +92,7 @@ class PptInterp(ComputedBase):
 
         # Make bin edges if not passed
         if bin_edges is None:
-            bin_edges = PptDigParams().make_bin_edges(bin_width)
+            bin_edges = PptDigParams().make_bin_edges(bin_width=bin_width)
 
         # Get interpolated ppt
         ppt_interp_df = self.fetch1_dataframe()
@@ -120,15 +120,17 @@ class PptDigParams(CovariateDigParamsBase):
 
     def _default_params(self):
         return [
-            # for GLM analysis
+            # for GLM analysis and ppt aligned firing rate vector analysis
             [.05],
             # for ppt aligned firing rate vector analysis
-            [.015], [.1],
+            [1/16], [.1],
                 ]
 
-    def make_bin_edges(self, bin_width, **kwargs):
+    def make_bin_edges(self, **kwargs):
         # Path fraction bin edges to be used to digitize path fraction
-        return Ppt.make_bin_edges(bin_width)
+        if "bin_width" not in kwargs:
+            raise Exception(f"bin_width must be passed")
+        return Ppt.make_bin_edges(kwargs["bin_width"])
 
     def get_valid_bin_nums(self, **kwargs):
         return np.arange(1, self.get_num_bin_edges(**kwargs))

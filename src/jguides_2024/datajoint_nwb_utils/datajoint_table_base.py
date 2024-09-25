@@ -941,11 +941,22 @@ class CovariateDigParamsBase(SecKeyParamsBase):
         return unpack_single_element([x for x in get_table_secondary_key_names(self) if "bin_width" in x])
 
     def get_bin_centers(self, **kwargs):
-        return vector_midpoints(self.make_bin_edges(self.fetch1(self.bin_width_name()), **kwargs))
+        if "bin_width" in kwargs:
+            raise Exception(f"bin_width should not be passed as it is defined here based on table entry")
+        table_subset = self
+        if "key" in kwargs:
+            table_subset = (self & kwargs["key"])
+        kwargs["bin_width"] = table_subset.fetch1(self.bin_width_name())
+        return vector_midpoints(self.make_bin_edges(**kwargs))
 
     def get_num_bin_edges(self, **kwargs):
-        bin_width = self.fetch1(self.bin_width_name())
-        return len(self.make_bin_edges(bin_width, **kwargs))
+        if "bin_width" in kwargs:
+            raise Exception(f"kwargs should not contain bin_width as this is defined based on table entry")
+        table_subset = self
+        if "key" in kwargs:
+            table_subset = (self & kwargs["key"])
+        kwargs["bin_width"] = table_subset.fetch1(self.bin_width_name())
+        return len(self.make_bin_edges(**kwargs))
 
     def get_num_bins(self, **kwargs):
         return self.get_num_bin_edges(**kwargs) - 1
@@ -954,7 +965,7 @@ class CovariateDigParamsBase(SecKeyParamsBase):
         # Bin nums depends on how table handles negative values, so require custom function in each child class
         raise Exception(f"This method should be overridden in child class")
 
-    def make_bin_edges(self, bin_width, **kwargs):
+    def make_bin_edges(self, **kwargs):
         raise Exception(f"This method should be overridden in child class")
 
 
@@ -972,8 +983,10 @@ class CovDigmethBase(ComputedBase):
         raise Exception(f"This method must be overwritten in child class")
 
     @classmethod
-    def make_bin_edges(cls, bin_width):
-        return make_bin_edges(cls.get_range(), bin_width)
+    def make_bin_edges(cls, **kwargs):
+        if "bin_width" not in kwargs:
+            raise Exception(f"bin_width must be passed")
+        return make_bin_edges(cls.get_range(), kwargs["bin_width"])
 
     def fetch1_dataframe_exclude(self, exclusion_params=None, object_id_name=None, restore_empty_nwb_object=True,
                                  df_index_name=None):
@@ -988,7 +1001,7 @@ class CovDigmethBase(ComputedBase):
 
         # Make bin edges if not passed
         if bin_edges is None:
-            bin_edges = self.make_bin_edges(bin_width)
+            bin_edges = self.make_bin_edges(bin_width=bin_width)
 
         # Get covariate
         cov_df = self.fetch1_dataframe_exclude(exclusion_params=exclusion_params)

@@ -82,6 +82,21 @@ class EmbeddingParams:
              scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ]
 
+        # epoch 12
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run6_target_region',
+          'epochs_id': '12'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 96, -76, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -108, -97, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+            # TODO: define params for CA1_targeted
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], -136, -78, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
         # mango20211207, 0.1 kernel SD, 3D
         base_k = {
           'fr_vec_emb_param_name': '15^3',

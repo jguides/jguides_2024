@@ -685,12 +685,19 @@ class BrainRegionUnits(ComputedBase):
                 hist_key.update({"electrode_group_name": electrode_group_name})
                 BrainRegionUnits.ValidShank.insert1({**key, **hist_key})
 
-    def get_unit_name_df(self, nwb_file_name, brain_region_units_param_name, brain_region_cohort_name,
-                         curation_set_name, epochs_description=None):
+    def get_unit_name_df(
+            self, nwb_file_name, brain_region_units_param_name, curation_set_name,
+            brain_region_cohort_name="all_targeted", brain_regions=None, epochs_description=None):
 
+        # Define brain regions. If brain regions not passed, all those based on brain_region_cohort_name.
+        # If passed, restrict those passed to those based on brain_region_cohort_name.
         key = {"nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
                "curation_set_name": curation_set_name}
-        brain_regions = (BrainRegionCohort & key).fetch1("brain_regions")
+        valid_brain_regions = (BrainRegionCohort & key).fetch1("brain_regions")
+        if brain_regions is None:
+            brain_regions = valid_brain_regions
+        else:
+            brain_regions = [x for x in brain_regions if x in valid_brain_regions]
 
         data_list = []
         for brain_region in brain_regions:

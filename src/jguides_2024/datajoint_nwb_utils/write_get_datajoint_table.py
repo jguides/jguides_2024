@@ -19,12 +19,13 @@ def write_get_datajoint_table(verbose=False):
     lines = opening_lines + middle_lines + closing_lines
 
     # Change to directory where we want to write file
-    os.chdir("/home/jguidera/Src/jguides_2024/src/jguides_2024")
+    write_path = "/home/jguidera/Src/jguides_2024/src/jguides_2024/datajoint_nwb_utils"
+    os.chdir(write_path)
 
     # Write file if different from existing (reduces amount of writing, which may be helpful since seems can get errors
     # when writing/reading from multiple processes)
     current_file = get_file_contents(
-        f"_get_datajoint_table.py", "/home/jguidera/Src/jguides_2024/src/jguides_2024/datajoint_nwb_utils")
+        f"_get_datajoint_table.py", write_path)
     if current_file != "\n".join(lines) + "\n":
         if verbose:
             print(f"Overwriting {file_name}...")

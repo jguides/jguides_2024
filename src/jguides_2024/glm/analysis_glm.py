@@ -121,7 +121,7 @@ class GLMContainer:
             x: getattr(self, x) for x in ["nwb_file_name", "epochs_id"]}).fetch1("epochs_description")
         return BrainRegionUnits().get_unit_name_df(
             self.nwb_file_name, self.units_params["brain_region_units_param_name"],
-            self.units_params["brain_region_cohort_name"], self.units_params["curation_set_name"],
+            self.units_params["curation_set_name"], self.units_params["brain_region_cohort_name"],
             epochs_description)
 
     def _get_file_name_base(self, glm_restriction_idx=None):

@@ -9,7 +9,7 @@ from reliability_paper_2024_figs.population_reliability_plot_helpers import _add
 
 # Path traversal
 
-# Single trial, same outbound path different outbound path, correct time_and_trials,
+# Single trial, same outbound path different outbound path, correct trials,
 # example rat with y lim zoom
 
 # Parameters

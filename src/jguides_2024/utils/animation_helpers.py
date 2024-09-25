@@ -4,7 +4,6 @@ import matplotlib.animation as animation
 
 from src.jguides_2024.utils.plot_helpers import get_default_plot_save_dir
 
-
 def save_animation(anim, fps, file_name, file_type=".mp4", save_dir=None, save_anim=True):
     # Get inputs if not passed
     if not save_dir:

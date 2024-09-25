@@ -1,14 +1,20 @@
+import copy
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
 import spyglass as nd
+import matplotlib.pyplot as plt
 
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SelBase, CovDigmethBase
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SelBase, CovDigmethBase, ComputedBase, \
+    CovariateDigParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert_analysis_table_entry
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_delay_duration
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
-from src.jguides_2024.task_event.jguidera_dio_trials import DioWellTrials
+from src.jguides_2024.task_event.jguidera_dio_trials import DioWellTrials, DioWellDDTrialsParams, DioWellDDTrials
 from src.jguides_2024.time_and_trials.jguidera_res_time_bins_pool import ResTimeBinsPool, ResTimeBinsPoolSel
+from src.jguides_2024.utils.check_well_defined import check_one_none
+from src.jguides_2024.utils.digitize_helpers import digitize_indexed_variable
 from src.jguides_2024.utils.make_bins import make_bin_edges
 from src.jguides_2024.utils.point_process_helpers import event_times_in_intervals, event_times_in_intervals_bool
 from src.jguides_2024.utils.set_helpers import check_membership
@@ -57,24 +63,51 @@ class RelTimeBase(CovDigmethBase):
         return np.asarray([0, 1])
 
     @classmethod
-    def make_bin_edges(cls, bin_width):
-        return make_bin_edges(cls.get_range(), bin_width)
+    def make_bin_edges(cls, **kwargs):
+        if "bin_width" not in kwargs:
+            raise Exception(f"bin_width must be passed")
+        return make_bin_edges(cls.get_range(), kwargs["bin_width"])
 
     def make(self, key):
+
+        # Get trial times
         valid_intervals = getattr((DioWellTrials & key), self._valid_interval_fn_name())()
-        time_bins_df = (ResTimeBinsPool & key).fetch1_dataframe()
-        rel_time_vec = np.asarray([np.nan] * len(time_bins_df))  # initialize
+
+        # Get time bin centers
+        time_vector = (ResTimeBinsPool & key).fetch1_dataframe().time_bin_centers.values
+
+        # Initialize vector for relative time
+        rel_time_vec = np.asarray([np.nan] * len(time_vector))
+
         for valid_interval in valid_intervals:
-            idxs, times_in_intervals = event_times_in_intervals(time_bins_df.time_bin_centers, [valid_interval])
+            idxs, times_in_intervals = event_times_in_intervals(time_vector, [valid_interval])
             rel_time_vec[idxs] = (times_in_intervals - valid_interval[0]) / (
                 unpack_single_element(np.diff(valid_interval)))
-        rel_time_df = pd.DataFrame.from_dict(
-            {"relative_time": time_bins_df.time_bin_centers, self._covariate_name(): rel_time_vec})
 
-        # Insert into table
-        insert_analysis_table_entry(self, [rel_time_df], key)
+        df = pd.DataFrame.from_dict(
+            {"time": time_vector, self._covariate_name(): rel_time_vec}).set_index("time")
 
-    def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name="relative_time"):
+        # Add information about what well animal is traveling to/from, and path animal is on or came from
+        # (collectively "path_name")
+        # ...Add param indicating no start/end shift to dd trials to key
+        dd_trials_meta_param_name = DioWellDDTrialsParams().meta_param_name()
+        key.update({dd_trials_meta_param_name: DioWellDDTrialsParams().lookup_no_shift_param_name()})
+        column_names = ["trial_start_well_names", "trial_end_well_names", "path_names"]
+        trials_info_df = (DioWellDDTrials & key).label_time_vector(time_vector, column_names, add_dd_text=True)
+        # ...Flag above column names for replacing None with "none"
+        replace_none_col_names = [x for x in trials_info_df.columns if any([y in x for y in column_names])]
+        df = pd.concat((df, trials_info_df), axis=1)
+
+        # Store in table
+        main_key = copy.deepcopy(key)
+        main_key.pop(dd_trials_meta_param_name)
+        insert_analysis_table_entry(
+            self, [df], main_key, reset_index=True, replace_none_col_names=replace_none_col_names)
+
+        # Insert into part table
+        self.DioWellDDTrials.insert1(key)
+
+    def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name="time"):
         return super().fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)
 
 
@@ -87,6 +120,13 @@ class RelTimeWell(RelTimeBase):
     -> nd.common.AnalysisNwbfile
     rel_time_well_object_id : varchar(40)
     """
+
+    class DioWellDDTrials(dj.Part):
+        definition = """
+        # Achieves upstream dependence on DioWellDDTrials
+        -> RelTimeWell
+        -> DioWellDDTrials
+        """
 
     @staticmethod
     def _covariate_name():
@@ -116,6 +156,13 @@ class RelTimeDelay(RelTimeBase):
     rel_time_delay_object_id : varchar(40)
     """
 
+    class DioWellDDTrials(dj.Part):
+        definition = """
+        # Achieves upstream dependence on DioWellDDTrials
+        -> RelTimeDelay
+        -> DioWellDDTrials
+        """
+
     @staticmethod
     def _covariate_name():
         return "relative_time_in_delay"
@@ -125,7 +172,7 @@ class RelTimeDelay(RelTimeBase):
         return "delay_times"
 
     def fetch1_dataframe_exclude(self, exclusion_params=None, object_id_name=None, restore_empty_nwb_object=True,
-                                 df_index_name="relative_time"):
+                                 df_index_name="time"):
 
         # Get df
         df = self.fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)
@@ -204,6 +251,13 @@ class RelTimeWellPostDelay(RelTimeBase):
     rel_time_well_post_delay_object_id : varchar(40)
     """
 
+    class DioWellDDTrials(dj.Part):
+        definition = """
+        # Achieves upstream dependence on DioWellDDTrials
+        -> RelTimeWellPostDelay
+        -> DioWellDDTrials
+        """
+
     @staticmethod
     def _covariate_name():
         return "relative_time_at_well_post_delay"
@@ -213,7 +267,7 @@ class RelTimeWellPostDelay(RelTimeBase):
         return "well_post_delay_times"
 
     def fetch1_dataframe_exclude(self, exclusion_params=None, object_id_name=None, restore_empty_nwb_object=True,
-                                 df_index_name="relative_time"):
+                                 df_index_name="time"):
 
         # Get df
         df = super().fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)
@@ -229,6 +283,100 @@ class RelTimeWellPostDelay(RelTimeBase):
             raise Exception(f"exclusion_params not accounted for in RelTimeWellPostDelay currently")
 
         return df
+
+    def digitized_rel_time_well_post_delay(self, bin_width=None, bin_edges=None, verbose=False):
+        # Check inputs
+        check_one_none([bin_width, bin_edges], ["bin_width", "bin_edges"])
+
+        # Make bin edges if not passed
+        if bin_edges is None:
+            bin_edges = RelTimeWellPostDelayDigParams().make_bin_edges(key={"bin_width": bin_width})
+
+        # Get relative time at well in post delay period
+        rel_time_well_post_delay_df = self.fetch1_dataframe()
+
+        # Digitize relative time
+        rel_time_well_post_delay_df["digitized_relative_time_at_well_post_delay"] = digitize_indexed_variable(
+            indexed_variable=rel_time_well_post_delay_df["relative_time_at_well_post_delay"], bin_edges=bin_edges,
+            verbose=verbose)
+
+        return rel_time_well_post_delay_df
+
+@schema
+class RelTimeWellPostDelayDigParams(CovariateDigParamsBase):
+    definition = """
+    # Parameters for RelTimeWellPostDelayDig
+    rel_time_well_post_delay_dig_param_name : varchar(40)
+    ---
+    rel_time_well_post_delay_bin_width : float
+    """
+
+    def _default_params(self):
+        return [
+            # for population firing rate vectors distance analysis
+            [.1]]
+
+    def make_bin_edges(self, **kwargs):
+        if "bin_width" not in kwargs:
+            raise Exception(f"bin_width must be passed")
+        return RelTimeWellPostDelay.make_bin_edges(**kwargs)
+
+    def get_valid_bin_nums(self, **kwargs):
+        return np.arange(1, self.get_num_bin_edges(**kwargs))
+
+
+@schema
+class RelTimeWellPostDelayDigSel(SelBase):
+    definition = """
+    # Selection from upstream tables for RelTimeWellPostDelayDig
+    -> RelTimeWellPostDelay
+    -> RelTimeWellPostDelayDigParams
+    """
+
+
+@schema
+class RelTimeWellPostDelayDig(ComputedBase):
+    definition = """
+    # Digitized relative time during post delay period
+    -> RelTimeWellPostDelayDigSel
+    ---
+    -> nd.common.AnalysisNwbfile
+    rel_time_well_post_delay_dig_object_id : varchar(100)
+    """
+
+    def make(self, key):
+
+        # Get relative time bin width
+        rel_time_well_post_delay_bin_width = (RelTimeWellPostDelayDigParams & key).fetch1(
+            "rel_time_well_post_delay_bin_width")
+
+        # Replace relative time column values with digitized version
+        dig_df = (RelTimeWellPostDelay & key).digitized_rel_time_well_post_delay(
+            key={"bin_width": rel_time_well_post_delay_bin_width})
+        dig_df.drop(columns="relative_time_at_well_post_delay", inplace=True)
+
+        # Insert table entry
+        insert_analysis_table_entry(self, [dig_df], key, reset_index=True)
+
+    def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name="time"):
+        return super().fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)
+
+    def plot_results(self):
+
+        # Get data
+        df = self.fetch1_dataframe()
+
+        # Initialize plot
+        fig, ax = plt.subplots()
+
+        # Plot data from current table in cyan, using very thick line
+        current_table_color = "cyan"
+        current_table_linewidth = 10
+        ax.plot(df.digitized_relative_time_at_well_post_delay, current_table_color)
+        ax.plot(df.dd_path_names, current_table_color, linewidth=current_table_linewidth)
+
+        # Plot data from DD trials table
+        (DioWellDDTrials & self.fetch1("KEY")).plot_results(ax=ax)
 
 
 def populate_jguidera_relative_time_at_well(

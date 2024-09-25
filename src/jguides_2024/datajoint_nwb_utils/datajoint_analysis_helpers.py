@@ -134,12 +134,17 @@ def get_subject_id(nwb_file_name):
 
 
 def plot_junction_fractions(
-        ax, span_data=None, linewidth=1, color="gray", linestyle="solid", alpha=1, zorder=1, x_scale_factor=1):
-    # Plot vertical lines denoting junction fractions
+        ax, span_data=None, linewidth=1, span_axis="y", color="gray", linestyle="solid", alpha=1, zorder=1,
+        x_scale_factor=1):
 
-    # Span y lim if span_data not passed
+    # Plot lines denoting junction fractions
+
+    # Span axis lim if span_data not passed
     if span_data is None:
-        span_data = ax.get_ylim()
+        if span_axis == "y":
+            span_data = ax.get_ylim()
+        elif span_axis == "x":
+            span_data = ax.get_xlim()
 
     # Get path fraction value at maze turns
     from src.jguides_2024.position_and_maze.jguidera_maze import get_n_junction_path_junction_fractions
@@ -148,17 +153,18 @@ def plot_junction_fractions(
     # Scale junction path fractions to x axis in plot
     junction_fractions *= x_scale_factor
     for junction_fraction in junction_fractions:
-        plot_spanning_line(span_data, junction_fraction, ax, "y", linewidth, color, linestyle, alpha, zorder)
+        plot_spanning_line(span_data, junction_fraction, ax, span_axis, linewidth, color, linestyle, alpha, zorder)
 
 
 def plot_well_events(
-        ax, span_data=None, linewidth=1, color="brown", linestyle="solid", alpha=1, zorder=1, x_scale_factor=1):
+        ax, span_data=None, linewidth=1, color="brown", linestyle="solid", alpha=1, zorder=1, x_scale_factor=1,
+        shift_x=0):
     # Plot vertical lines denoting well arrival and reward delivery
 
     # Span y lim if span_data not passed
     if span_data is None:
         span_data = ax.get_ylim()
-    for well_event_time in np.asarray([0, 2])*x_scale_factor:
+    for well_event_time in np.asarray([0, 2])*x_scale_factor + shift_x:
         plot_spanning_line(span_data, well_event_time, ax, "y", linewidth, color, linestyle, alpha, zorder)
 
 

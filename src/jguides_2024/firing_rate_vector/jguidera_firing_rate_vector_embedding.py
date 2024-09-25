@@ -424,8 +424,9 @@ class FRVecEmb(ComputedBase):
     def plot_by_relative_time_in_delay(
             self, target_epoch=None, plot_components=("0", "1"), ax=None, exclusion_params=None, **plot_params):
         # Color dots in scatter by fraction of time in delay period passed
+        cmap_name = "jet_r"
         self._plot_by_covariate(
-            RelTimeDelay, "digitized", "digitized_relative_time_in_delay",
+            RelTimeDelay, "digitized", "digitized_relative_time_in_delay", cmap_name=cmap_name,
             target_epoch=target_epoch, plot_components=plot_components, ax=ax, exclusion_params=exclusion_params,
             **plot_params)
 

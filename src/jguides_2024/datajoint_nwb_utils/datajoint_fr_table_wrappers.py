@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import format_epochs, \
-    get_sort_group_unit_id, plot_junction_fractions
+    get_sort_group_unit_id, plot_junction_fractions, plot_well_events
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import (abbreviate_path_name,
                                                                           format_nwb_file_name)
 from src.jguides_2024.firing_rate_map.jguidera_ppt_firing_rate_map import STFrmapPuptSm, FrmapPuptSm
@@ -106,7 +106,7 @@ class PlotSTFRMap:
         return fr_df
 
     def plot_single_trial_firing_rate_map(self,
-                                          brain_region_cohort_name="all_targeted",
+                                          brain_regions=None,
                                           unit_names=None,  # use to restrict to a subset of units
                                           firing_rate_bounds_type="IQR",
                                           curation_set_name="runs_analysis_v1",
@@ -150,12 +150,16 @@ class PlotSTFRMap:
 
         # Get inputs if not passed
         if dio_well_arrival_trials_param_name is None:
-            dio_well_arrival_trials_param_name = DioWellArrivalTrialsParams().lookup_delay_param_name()
+            dio_well_arrival_trials_param_name = DioWellArrivalTrialsParams().lookup_param_name([-2, 4])
 
-        # Get brain regions
-        brain_regions = (BrainRegionCohort() & {
-                "brain_region_cohort_name": brain_region_cohort_name, "nwb_file_name": self.nwb_file_name}).fetch1(
-            "brain_regions")
+        # Define brain region cohort name
+        brain_region_cohort_name = "all_targeted"
+
+        # Get brain regions if not passed
+        if brain_regions is None:
+            brain_regions = (BrainRegionCohort() & {
+                    "brain_region_cohort_name": brain_region_cohort_name, "nwb_file_name": self.nwb_file_name}).fetch1(
+                "brain_regions")
 
         # Define key for querying tables
         key = {"nwb_file_name": self.nwb_file_name,
@@ -190,7 +194,8 @@ class PlotSTFRMap:
         brain_region_units_param_name = BrainRegionUnitsParams().lookup_epochs_param_name(
                 self.nwb_file_name, self.epochs, min_epoch_mean_firing_rate)
         units_df = BrainRegionUnits().get_unit_name_df(
-            self.nwb_file_name, brain_region_units_param_name, brain_region_cohort_name, curation_set_name)
+            self.nwb_file_name, brain_region_units_param_name, curation_set_name, brain_region_cohort_name,
+            brain_regions)
         # If unit names not passed, iterate over all units in brain_regions
         if unit_names is None:
             unit_names = units_df.index
@@ -235,6 +240,9 @@ class PlotSTFRMap:
             # Initialize map that will use to enforce common y lim across plots
             max_ylim_map = {k: 0 for k in row_iterables}
 
+            # # Initialize map for xlims
+            # xlims_map = dict()
+
             # Loop through restrictions
             for restriction_idx, restriction in enumerate(self.restrictions):
 
@@ -248,6 +256,8 @@ class PlotSTFRMap:
                             ax = ax_map[(epoch, 0, row_iterable, restriction_idx)]
                             ax.axis("off")
                         continue
+                    # # Store x lims (do here to avoid loading table multiple times)
+                    # xlims_map[(epoch, restriction)] = fr_df._get_xlims()
                     fr_df_subset = df_filter_columns(fr_df, {"unit_id": unit_id})
                     fr_arr = np.vstack(fr_df_subset["smoothed_rate_map"])
 
@@ -337,24 +347,50 @@ class PlotSTFRMap:
                         ax=ax, xlim=xlims, xticks=xticks, xticklabels=xticklabels, yticklabels=yticklabels,
                         xlabel=xlabel, ylabel=ylabel, fontsize=fontsize, ticklabels_fontsize=ticklabels_fontsize)
 
-            # Plot vertical lines to denote maze corners if path firing rate maps (do after making all
-            # plots so that have common y lim max)
+            # Plot vertical lines to denote task events (do after making all plots so that have common y lim max)
             for (epoch, _, row_iterable, restriction_idx), ax in ax_map.items():
                 restriction = self.restrictions[restriction_idx]
-                if restriction.restrict_maze_name_type == "path_name":
+
+                # Maze corners if path firing rate maps
+                if restriction.restrict_time_period == "path" and restriction.restrict_maze_name_type == "path_name":
                     valid_path_names = RewardWellPath().fetch1("path_names")
                     if restriction.restrict_maze_name not in valid_path_names:
                         raise Exception(f"restrict_maze_name must be in {valid_path_names} to plot maze corners but is "
                                         f"{restriction.restrict_maze_name}")
-                    # Get max v value of lines. For first subplot with single trial firing rates, set
-                    # always to max y value in each plot (to avoid bars that go up past where trials end).
-                    # For second subplot with average firing rate, set depending on whether using
-                    # common y axis or not
-                    max_y = ax.get_ylim()[1]  # default
-                    if row_iterable == "average_fr":
-                        max_y = _get_max_y(sharey, ax, max_ylim_map, row_iterable)
-                    y_vals = expand_interval([0, max_y], expand_factor=0)  # set y value a bit larger than y lims
-                    plot_junction_fractions(ax, y_vals, x_scale_factor=1/float(fr_ppt_smoothed_param_name))
+                    fn_name = plot_junction_fractions
+                    x_scale_factor = 1
+                    if row_iterable == "trial_fr":
+                        x_scale_factor = 1/float(fr_ppt_smoothed_param_name)
+                    kwargs = {"x_scale_factor": x_scale_factor}
+
+                # Well arrival and reward delivery if well arrival firing rate maps
+                elif restriction.restrict_time_period == "well_arrival":
+                    fn_name = plot_well_events
+                    x_scale_factor = 1
+                    shift_x = 0
+                    if row_iterable == "trial_fr":
+                        x_scale_factor = 1 / float(fr_wa_smoothed_param_name)
+                        # For trial firing rate, must shift x depending on well arrival period since bins are
+                        # sample number
+                        fr_table_subset = self._get_fr_table_subset(key, epoch, restriction, populate_tables=False)
+                        if len(fr_table_subset) == 0:
+                            continue
+                        time_period_start = fr_table_subset._get_xlims()[0]
+                        shift_x = -time_period_start * x_scale_factor
+                    kwargs = {"x_scale_factor": x_scale_factor, "shift_x": shift_x}
+
+                else:
+                    raise Exception(f"case not accounted for")
+
+                # Get max y value of lines. For first subplot with single trial firing rates, set
+                # always to max y value in each plot (to avoid bars that go up past where trials end).
+                # For second subplot with average firing rate, set depending on whether using
+                # common y axis or not
+                max_y = ax.get_ylim()[1]  # default
+                if row_iterable == "average_fr":
+                    max_y = _get_max_y(sharey, ax, max_ylim_map, row_iterable)
+                y_vals = expand_interval([0, max_y], expand_factor=0)  # set y value a bit larger than y lims
+                fn_name(ax, y_vals, **kwargs)
 
             # Plot bar to indicate environment (do after making all plots so that have common y lim max)
             if plot_environment_marker:

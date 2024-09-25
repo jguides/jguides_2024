@@ -18,6 +18,7 @@ from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector import FRVe
     populate_jguidera_firing_rate_vector
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionCohort, CurationSet
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RunEpoch, RecordingSet
+from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
 from src.jguides_2024.position_and_maze.jguidera_ppt import PptParams
 from src.jguides_2024.position_and_maze.jguidera_ppt_interp import PptDig, populate_jguidera_ppt_interp, \
     PptDigParams
@@ -27,6 +28,7 @@ from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, BrainRegionU
 from src.jguides_2024.task_event.jguidera_dio_trials import DioWellTrials, DioWellDDTrials
 from src.jguides_2024.time_and_trials.jguidera_res_time_bins_pool import ResTimeBinsPoolSel
 from src.jguides_2024.utils.dict_helpers import make_keys
+from src.jguides_2024.utils.point_process_helpers import event_times_in_intervals_bool
 from src.jguides_2024.utils.state_evolution_estimation import AverageVectorDuringLabeledProgression
 
 # Needed for table definitions:
@@ -54,7 +56,9 @@ class PathFRVecParams(SecKeyParamsBase):
     """
 
     def _default_params(self):
-        return [[x] for x in ["none", "even_odd_trials", "correct_incorrect_trials"]]
+        return [[x] for x in [
+            "none", "even_odd_trials", "correct_incorrect_stay_trials", "correct_incorrect_trials",
+            "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials"]]
 
     # Drop dependent tables and avoid error related to attempt to
     # drop part table before main table
@@ -82,11 +86,15 @@ class PathFRVecSel(CovariateFRVecSelBase):
         if verbose:
             print(f"getting potential keys for PathFRVecSel...")
 
+        # Define common params
+        ppt_bin_width = .0625
+
         # Define a first set of parameters, to be used with all units
         min_epoch_mean_firing_rate = .1
         primary_kernel_sds = [.1]
         primary_path_fr_vec_param_names = ["none"]  # pair all possible combinations with these
-        primary_ppt_dig_param_name = PptDigParams().lookup_param_name([.05])
+        primary_lass\
+            = PptDigParams().lookup_param_name([ppt_bin_width])
         curation_set_name = "runs_analysis_v1"
         brain_region_cohort_name = "all_targeted"
         primary_features = {
@@ -95,7 +103,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         }
         all_features = {
             "res_epoch_spikes_sm_param_name": set(FRVec().fetch("res_epoch_spikes_sm_param_name")),
-            "ppt_dig_param_name": [PptDigParams().lookup_param_name([x]) for x in [.05]],
+            "ppt_dig_param_name": [PptDigParams().lookup_param_name([x]) for x in [ppt_bin_width]],
             "zscore_fr": set(FRVec().fetch("zscore_fr")),
             "path_fr_vec_param_name": set(PathFRVecParams().fetch("path_fr_vec_param_name")),
         }
@@ -106,8 +114,11 @@ class PathFRVecSel(CovariateFRVecSelBase):
         unit_subset_iterations = np.arange(0, 10)
         # ...we want to populate using the above across multiple path_fr_vec_param_names
         primary_features_2 = copy.deepcopy(primary_features)
-        primary_path_fr_vec_param_names_2 = ["none", "even_odd_trials", "correct_incorrect_trials"]
-        primary_kernel_sds_2 = [.1, .2]
+        primary_path_fr_vec_param_names_2 = [
+            "none", "even_odd_trials", "correct_incorrect_trials", "correct_incorrect_stay_trials",
+            "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials",
+        ]
+        primary_kernel_sds_2 = [.1]
 
         # Define nwb file names
         nwb_file_names = get_jguidera_nwbf_names()
@@ -168,8 +179,17 @@ class PathFRVecSel(CovariateFRVecSelBase):
                                     [kernel_sd]), "path_fr_vec_param_name": path_fr_vec_param_name}
                                 keys.append({**primary_features_2, **key, **k})
 
+        print(f"\nDefined {len(keys)} potential keys, now restricting to those with matches in upstream tables...\n")
+
+        # Calls parent class method
         table_intersection_keys = super()._get_potential_keys()
-        return [x for x in keys if x in table_intersection_keys]
+        print(f"...found {len(table_intersection_keys)} upstream table keys, now checking which potential keys "
+              f"are in these...")
+        potential_keys = [x for x in keys if x in table_intersection_keys]
+
+        print(f"\nReturning {len(potential_keys)} potential keys...")
+
+        return potential_keys
 
     # Drop dependent tables and avoid error related to attempt to
     # drop part table before main table
@@ -180,6 +200,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         delete_(self, [PathFRVec], key, safemode)
 
 
+# TODO: delete DioWellTrials here and in other FRVec tables (not used)
 @schema
 class PathFRVec(CovariateFRVecBase):
     definition = """
@@ -207,6 +228,48 @@ class PathFRVec(CovariateFRVecBase):
         -> PathFRVec
         -> DioWellDDTrials
         """
+
+    @staticmethod
+    def alter_input_labels_stay_leave(labels, key):
+        # Add to labels whether time is "associated" with "stay trial" (rat stays at well for full delay period)
+        # or "leave trial" (rat does not stay at well for full delay period) ON UPCOMING WELL ARRIVAL.
+
+        # Also track which samples correspond to upcoming stay or leave trial, and exclude those
+        # corresponding to neither.
+
+        in_intervals_bool_map = dict()  # store booleans indicating whether samples in stay or leave trials
+        table_subset = (DioWellTrials & key)
+
+        for label_name in MazePathWell().stay_leave_trial_text():  # for trial types
+
+            # DioWellTrials trials are defined from one well arrival to the next. We want departure on one trial
+            # to arrival on next, and whether or rat stayed at well for full delay duration
+            # ("stay trial") upon that arrival
+            well_departure_times, well_arrival_times = table_subset.fetch1("well_departure_times", "well_arrival_times")
+            trial_intervals = np.asarray(list(zip(well_departure_times, well_arrival_times[1:])))
+
+            # Get boolean indicating stay or leave
+            trial_bool = table_subset.get_stay_leave_trial_bool(label_name)
+            # Shift to begin at first (rather than zeroeth) trial since want to know whether rat stayed on UPCOMING
+            # well arrival (not previous)
+            trial_bool = trial_bool[1:]
+
+            # Restrict to trial intervals corresponding to upcoming stay trial at well
+            trial_intervals = trial_intervals[trial_bool, :]
+
+            # Add text to labels with times within these intervals
+            # ...Get boolean indicating whether samples in intervals above
+            in_intervals_bool = event_times_in_intervals_bool(labels.index, trial_intervals)
+            # ...Add text to labels in interval
+            labels.loc[in_intervals_bool] = [
+                MazePathWell().get_stay_leave_trial_path_name(x, label_name)
+                for x in labels[in_intervals_bool].values]
+            # Store boolean indicating whether samples in intervals above, so can ultimately exclude samples
+            # not associated with stay or leave trials
+            in_intervals_bool_map[label_name] = in_intervals_bool
+
+        # Return updated labels and boolean indicating labels that are associated with stay or leave trials
+        return labels, in_intervals_bool_map
 
     def get_inputs(self, key, verbose=False, ax=None):
 
@@ -238,14 +301,44 @@ class PathFRVec(CovariateFRVecBase):
         if labels_description == "even_odd_trials":
             labels = self.alter_input_labels_even_odd(labels)
 
-        elif labels_description == "correct_incorrect_trials":
-            labels, valid_bool = self.alter_input_labels_correct_incorrect(labels, key)
+        elif labels_description in ["correct_incorrect_trials", "prev_correct_incorrect_trials"]:
+            # Indicate whether correct or incorrect on current trial (default) or previous
+            previous_trial = False
+            if labels_description == "prev_correct_incorrect_trials":
+                previous_trial = True
+            labels, valid_bool = self.alter_input_labels_correct_incorrect(labels, key, previous_trial)
 
             # Restrict other quantities to times of valid labels
             fr_vec_df = fr_vec_df[valid_bool]
             ppt_dig_df = ppt_dig_df[valid_bool]
+
+        elif labels_description in ["correct_incorrect_stay_trials", "even_odd_correct_incorrect_stay_trials"]:
+            # Label trials as correct or incorrect, keep only trials where rat subsequently stayed at well, and
+            # label these as even or odd
+
+            # Add text to denote whether upcoming period at well is "stay" or "leave" trial
+            labels, in_intervals_bool_map = self.alter_input_labels_stay_leave(labels, key)
+
+            # Add text to denote whether correct/incorrect trial in a given context (e.g. left to center path)
+            # note that the line below returns only labels with correct/incorrect
+            labels, label_bool = self.alter_input_labels_correct_incorrect(labels, key)
+
+            # Add text to denote whether even/odd trial in a given context (e.g. left to center path) if indicated
+            if labels_description == "even_odd_correct_incorrect_stay_trials":
+                labels = self.alter_input_labels_even_odd(labels)
+
+            # Keep only stay trials
+            stay_bool = in_intervals_bool_map["stay_trial"]
+
+            # Update quantities
+            labels = labels[stay_bool[label_bool]]
+            valid_bool = np.logical_and(label_bool, stay_bool)
+            ppt_dig_df = ppt_dig_df[valid_bool]
+            fr_vec_df = fr_vec_df[valid_bool]
+
         elif labels_description == "none":
             pass
+
         else:
             raise Exception
 
@@ -399,10 +492,11 @@ class PathAveFRVecSel(PathFRVecAveSelBase):
         return ["even_odd_trials"]
 
 
+# TODO: regenerate table if possible; changed table heading
 @schema
 class PathAveFRVec(PathFRVecAveBase, CovariateFRVecTrialAveBase):
     definition = """
-    # Comparison of average firing rate difference vectors across combinations of path bin, path identity, and epoch
+    # Comparison of average firing rate vectors across combinations of path bin, path identity, and epoch
     -> PathAveFRVecSel
     ---
     -> nd.common.AnalysisNwbfile
@@ -420,7 +514,7 @@ class PathAveFRVec(PathFRVecAveBase, CovariateFRVecTrialAveBase):
 """
 Notes on PathFRVecSTAveSumm table setup:
 - We want to combine entries across PathFRVecSTAve, across nwb_file_names, epochs_description, 
-and brain_region. For this reason, we want PathFRVecSTAveSel to have all primary keys of PathFRVecSTAve
+and brain_region. For this reason, we want PathFRVecSTAveSummSel to have all primary keys of PathFRVecSTAve
 except for nwb_file_name, epochs_description, brain_region, brain_region_units_param_name, and 
 curation_name. 
   To specify the nwb_file_names and corresponding epochs_descriptions we want to combine across, we use recording_set.
@@ -591,10 +685,11 @@ class PathAveFRVecSummSel(CovariateFRVecAveSummSelBase):
             "relationship_div_rat_cohort", "relationship_div_rat_cohort_median"]
 
 
+# TODO: would be good to regenerate table since changed heading
 @schema
 class PathAveFRVecSumm(CovariateAveFRVecSummBase, PathFRVecSummBase):
     definition = """
-    # Summary of single 'trial' comparison of firing rate vectors
+    # Summary of trial average comparison of firing rate vectors
     -> PathAveFRVecSummSel
     ---
     -> nd.common.AnalysisNwbfile

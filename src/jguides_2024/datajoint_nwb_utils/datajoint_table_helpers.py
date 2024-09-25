@@ -930,7 +930,8 @@ def get_schema_table_names_from_file(schema_name, schema_path=None):
         schema_path = get_jguidera_schema_dir(schema_name)
 
     # Get contents of file with schema
-    file_contents = np.asarray(get_file_contents(f"{schema_name.replace('.', '/')}.py", schema_path).split("\n"))  # split lines
+    file_contents = np.asarray(get_file_contents(
+        f"{schema_name.replace('.', '/')}.py", schema_path).split("\n"))  # split lines
 
     # Identify lines with table definitions as those below lines with the schema decorator. Exclude comments
     table_idxs = [idx + 1 for idx, x in enumerate(file_contents) if "@schema" in x and x[0] != "#"]
@@ -953,7 +954,7 @@ def get_module_path():
 
 
 def get_module_subdirs():
-    module_path = get_module_dir()
+    module_path = get_module_path()
     return [x for x in os.listdir(module_path) if not x.startswith("_")
                   and os.path.isdir(os.path.join(module_path, x))]
 
@@ -989,6 +990,7 @@ def get_jguidera_schema_dir(schema_name):
     return unpack_single_element(
         [os.path.join(module_path, child_dir) for child_dir in subdirs for x in os.listdir(
             f"{module_path}/{child_dir}") if x == f"{schema_name}.py"])
+
 
 def get_import_statements(schema_names=None):
 

@@ -211,12 +211,15 @@ class TimeRelWADig(ComputedBase):
     def make(self, key):
         bin_edges_map = TimeRelWADigParams().get_bin_edges_map(key=key)
         df = (TimeRelWA & key).fetch1_dataframe()
+
         # Replace relative time column values with digitized version
         rel_time_column_names = ["time_to_wa", "time_from_wa"]
         for column_name in rel_time_column_names:
             df[f"digitized_{column_name}"] = digitize_indexed_variable(
                 df[column_name], bin_edges=bin_edges_map[column_name])
         df.drop(columns=rel_time_column_names, inplace=True)
+
+        # Insert table entry
         insert_analysis_table_entry(self, [df], key, reset_index=True)
 
     def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name="time"):
@@ -243,8 +246,8 @@ class TimeRelWADigSingleAxisParams(SecKeyParamsBase):
     """
 
     def _default_params(self):
-        return [[-2, 2],  # for firing rate vector analysis
-                [0, 2]]  # for GLM analysis
+        return [[-1, 3],
+                [0, 2]]
 
     def get_bin_edges(self, key):
         rel_time_start, rel_time_end = (self & key).fetch1("rel_time_start", "rel_time_end")
@@ -264,7 +267,7 @@ class TimeRelWADigSingleAxisParams(SecKeyParamsBase):
 
     def get_valid_bin_nums(self, key):
         # Bin nums before well arrival start at zero and decrease by one, moving away from well arrival.
-        # Bin nums after wella rrival start at one and increase by one, moving away from well arrival.
+        # Bin nums after well arrival start at one and increase by one, moving away from well arrival.
         bin_centers = self.get_bin_centers(key)
         # Check no bin centers are zero (this is not expected, and if it occurred, we would need to consder how
         # to account for it in code)
@@ -274,6 +277,9 @@ class TimeRelWADigSingleAxisParams(SecKeyParamsBase):
         num_pos = np.sum(bin_centers > 0)
         num_neg = np.sum(bin_centers < 0)
         return np.sort(np.concatenate((-np.arange(0, num_neg), np.arange(1, num_pos + 1))))
+
+    def get_valid_interval(self):
+        return [self.fetch1("rel_time_start"), self.fetch1("rel_time_end")]
 
     def delete_(self, key, safemode=True):
         delete_(self, [TimeRelWADigSingleAxisSel], key, safemode)
@@ -350,9 +356,8 @@ class TimeRelWADigSingleAxis(ComputedBase):
         time_rel_wa_comb[neg_bool] = [
             self._convert_pre_wa_int(x) for x in time_rel_wa_dig_df.digitized_time_to_wa[neg_bool]]
         time_rel_wa_comb[pos_bool] = time_rel_wa_dig_df.digitized_time_from_wa[pos_bool]
-        time_rel_wa_dig_single_axis_df = pd.DataFrame.from_dict(
-            {time_rel_wa_comb.index.name: time_rel_wa_comb.index, "time_rel_wa": time_rel_wa_comb})
-        insert_analysis_table_entry(self, [time_rel_wa_dig_single_axis_df], key)
+        time_rel_wa_dig_single_axis_df = pd.DataFrame.from_dict({"time_rel_wa": time_rel_wa_comb})
+        insert_analysis_table_entry(self, [time_rel_wa_dig_single_axis_df], key, reset_index=True)
 
     def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name="time"):
         return super().fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)

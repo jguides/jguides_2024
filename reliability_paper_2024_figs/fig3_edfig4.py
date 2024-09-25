@@ -223,7 +223,7 @@ if not restrict_single_contingency and not group_data_quick_load:
             "nwb_file_names", "epochs_descriptions_names")
         for nwb_file_name, epochs_descriptions_name in zip(nwb_file_names, epochs_descriptions_names):
             epochs_descriptions = (EpochsDescriptions() & {
-                "nwb_file_name": nwb_file_name, "epochs_descriptions_names": epochs_descriptions_names}).fetch1(
+                "nwb_file_name": nwb_file_name, "epochs_descriptions_name": epochs_descriptions_name}).fetch1(
                 "epochs_descriptions")
             for epochs_description in epochs_descriptions:
                 epochs_id = (EpochsDescription() & {"nwb_file_name": nwb_file_name,

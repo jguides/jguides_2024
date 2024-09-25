@@ -8,12 +8,12 @@ from matplotlib import pyplot as plt
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, \
     plot_junction_fractions, get_val_pairs, plot_horizontal_lines, \
-    get_subject_id_shorthand
+    get_subject_id_shorthand, get_ordered_subject_ids
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SelBase, SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert_analysis_table_entry, \
     unique_table_column_sets, \
     insert1_print, get_relationship_texts, format_nwb_file_name, get_default_param, get_table_name, \
-    fetch1_tolerate_no_entry, delete_, get_boot_params
+    fetch1_tolerate_no_entry, delete_, get_boot_params, get_table_secondary_key_names
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_nwb_file_name_epochs_description
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionColor, BrainRegionCohort, CurationSet
@@ -22,7 +22,7 @@ from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RunEpoch
 from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnitsParams, BrainRegionUnitsCohortType, \
-    EpsUnitsParams, BrainRegionUnitsFail
+    EpsUnitsParams, BrainRegionUnitsFail, BrainRegionUnits
 from src.jguides_2024.task_event.jguidera_dio_trials import DioWellDDTrials
 from src.jguides_2024.task_event.jguidera_task_performance import strip_performance_outcomes
 from src.jguides_2024.time_and_trials.jguidera_time_relative_to_well_event import TimeRelWADigSingleAxisParams
@@ -141,6 +141,10 @@ class CovariateFRVecBase(ComputedBase):
         # Return axis
         return ax
 
+    # Override in child class to store additional table specific quantities
+    def _store_table_specific_quantities(self, inputs, main_table_key):
+        return main_table_key
+
     def make(self, key):
 
         # Reset tracker for upstream tiles (important so does not carry over from one populate command to next)
@@ -155,6 +159,8 @@ class CovariateFRVecBase(ComputedBase):
         # Insert into table
         # ...Add names of unit that compose firing rate vectors
         main_table_key = {**key, **{"unit_names": inputs.unit_names}}
+        # ...Add additional table dependent items if present
+        self._store_table_specific_quantities(inputs, main_table_key)
         insert_analysis_table_entry(
             self, [obj.vector_df, obj.ave_vector_df, obj.diff_vector_df, obj.ave_diff_vector_df], key=main_table_key)
 
@@ -232,32 +238,37 @@ class CovariateFRVecBase(ComputedBase):
     def alter_input_labels_even_odd(labels):
         # Alter labels to indicate whether trials even or odd
 
-        # Get map from label to a list with trials with the label
+        # Get map from each passed label to a list with trials with the label
         unique_labels = set(labels.values)
         trials_map = {label: find_spans_increasing_list(np.where(labels == label)[0])[0] for label in
                       unique_labels}
+
         # Add even or odd trials status to labels
-        # ...initial vector with None so can check whether all samples assigned to even/odd
-        # first check that no None in labels
+        # Initialize vector with None so can check whether all samples assigned to even/odd
+        # ...first check that no None in labels
         if any([x is None for x in labels]):
             raise Exception(f"Code expects no None in labels to be able to check whether "
                             f"even/odd assigned to all labels. Must make changes to code if "
                             f"want to allow None in labels")
-
+        # ...now initialize vector with None
         new_labels = np.asarray([None]*len(labels))
+
+        # Make new label names
         for context_name, trial_spans in trials_map.items():
             for path_trial_num, (i1, i2) in enumerate(trial_spans):
                 # must add one in index because trial span ends reflect true endpoint, but indexing
                 # leaves out endpoint
                 new_labels[i1:i2 + 1] = MazePathWell().get_even_odd_trial_name(context_name, path_trial_num)
+
+        # Raise error if could not assign even/odd to all labels
         if any([x is None for x in new_labels]):
             raise Exception(f"could not assign even/odd to all labels")
 
         # Return labels
         return pd.Series(new_labels, index=labels.index)
 
-    def alter_input_labels_correct_incorrect(self, labels, key):
-        # Alter labels to indicate whether trials correct or incorrect
+    def alter_input_labels_correct_incorrect(self, labels, key, previous_trial=False):
+        # Alter labels to indicate whether trials correct or incorrect on current or previous trial
 
         if not isinstance(labels, pd.Series):
             raise Exception(f"labels must be a series but is {type(labels)}")
@@ -267,10 +278,16 @@ class CovariateFRVecBase(ComputedBase):
             labels.index, ["trial_end_epoch_trial_numbers"])["trial_end_epoch_trial_numbers"]
 
         # Get map from departure to departure trial end epoch trial numbers (epoch trial number corresponding to
-        # destination well) to trial end performance outcomes
+        # destination well) to performance outcomes
+        # Default is outcomes on CURRENT trial
+        outcomes_name = "trial_end_performance_outcomes"
+        # Set to outcomes on PREVIOUS trial if indicated
+        if previous_trial:
+            outcomes_name = "trial_start_performance_outcomes"
+        # Get the map
         performance_outcomes_map = dict_comprehension(*(DioWellDDTrials & key).fetch1(
-            "trial_end_epoch_trial_numbers", "trial_end_performance_outcomes"))
-        # ...update upstream entries tracker
+            "trial_end_epoch_trial_numbers", outcomes_name))
+        # Update upstream entries tracker
         self._update_upstream_entries_tracker(DioWellDDTrials, key)
 
         # Get performance outcomes corresponding to labels, via epoch trial numbers
@@ -288,7 +305,8 @@ class CovariateFRVecBase(ComputedBase):
         # Get path names with correct/incorrect
         valid_outcomes = ["correct", "incorrect"]
         correct_incorrect_trial_path_names = [
-            MazePathWell().get_correct_incorrect_trial_text(x, MazePathWell().correct_incorrect_trial_text(y))
+            MazePathWell().get_correct_incorrect_trial_text(
+                x, MazePathWell().correct_incorrect_trial_text(y, previous_trial), previous_trial)
             if y in valid_outcomes else "none"
             for x, y in zip(labels, performance_outcomes_)]
 
@@ -300,7 +318,7 @@ class CovariateFRVecBase(ComputedBase):
         return pd.Series(
             np.asarray(correct_incorrect_trial_path_names)[valid_bool], index=labels.index[valid_bool]), valid_bool
 
-    def plot_labels(self, ax=None):
+    def plot_labels(self, ax=None, plot_dd_trials_labels=False):
 
         # Get results
         dfs = self.fetch1_dataframes()
@@ -319,6 +337,174 @@ class CovariateFRVecBase(ComputedBase):
         xlims = [np.min(bout_idxs), np.max(bout_idxs)]
         path_names = np.unique(vector_df.label)
         plot_horizontal_lines(xlims, path_names, ax)
+
+        # Plot departure to departure trials labels (to check against prior data source) if indicated
+        if plot_dd_trials_labels:
+            (DioWellDDTrials & self.fetch1("KEY")).plot_results(ax=ax)
+
+        return ax
+
+    def get_keys_across_entries(self, **kwargs):
+        # Get keys to df entries across entries. Facilitates parallelization of pulling data from table
+
+        # Declare variable values if not passed
+        # subject IDs
+        # Get map from subject ID to Haight single contingency rotation recording set name
+        subject_ids = get_ordered_subject_ids()  # default
+        subject_id = kwargs.pop("subject_id", None)
+        if subject_id is not None:
+            subject_ids = [subject_id]
+        # contingencies
+        contingencies = kwargs.pop("contingencies", None)
+        # unit subset iterations
+        unit_subset_iterations = kwargs.pop("unit_subset_iterations", np.arange(0, 10))
+        # min epoch mean firing rate
+        min_epoch_mean_firing_rate = kwargs.pop("min_epoch_mean_firing_rate", .1)
+        # unit subset type
+        unit_subset_type = kwargs.pop("unit_subset_type", "rand_target_region")
+        # unit subset size
+        unit_subset_size = kwargs.pop("unit_subset_size", 50)
+        # curation name
+        curation_set_name = kwargs.pop("curation_set_name", "runs_analysis_v1")
+
+        # Define starting key
+        meta_param_name = self.meta_param_name()
+        check_membership([meta_param_name], kwargs)
+        key = copy.deepcopy(kwargs)  # define starting key as all remaining kwargs
+        default_key = {
+            "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0, "brain_region_cohort_name": "all_targeted"}
+        for k, default_val in default_key.items():
+            val = kwargs.pop(k, None)
+            if val is None:
+                val = default_key[k]
+            key[k] = val
+
+        # Get map from subject ID to Haight single contingency rotation recording set name
+        recording_set_names_map = {
+            subject_id: RecordingSet().get_Haight_single_contingency_rotation_set_name([subject_id])
+            for subject_id in subject_ids}
+
+        print(f"Getting keys across entries for table {self.table_name}...")
+
+        keys = []  # initialize list for keys
+        for subject_id, recording_set_name in recording_set_names_map.items():
+
+            key.update({"subject_id": subject_id})
+
+            nwb_file_names, epochs_descriptions_names = (
+                    RecordingSet & {"recording_set_name": recording_set_name}).fetch1(
+                "nwb_file_names", "epochs_descriptions_names")
+
+            for nwb_file_name, epochs_descriptions_name in zip(nwb_file_names, epochs_descriptions_names):
+
+                print(f"On nwb_file_name {nwb_file_name}...")
+
+                key.update({"nwb_file_name": nwb_file_name})
+
+                epochs_descriptions = (EpochsDescriptions & {
+                    "nwb_file_name": nwb_file_name,
+                    "epochs_descriptions_name": epochs_descriptions_name}).fetch1("epochs_descriptions")
+
+                epochs = [(EpochsDescription() & {
+                    "nwb_file_name": nwb_file_name,
+                    "epochs_description": epochs_description}).get_epoch() for epochs_description in
+                                epochs_descriptions]
+
+                # Restrict to epochs with contingencies if indicated
+                if contingencies is not None:
+                    # Do not use key to query below, since that has epoch which will prevent pulling all epochs
+                    # with current contingency
+                    contingency_epochs = np.concatenate([(TaskIdentification & {
+                        "contingency": contingency, "nwb_file_name": nwb_file_name}).fetch(
+                        "epoch") for contingency in contingencies])
+
+                    # Narrow to epochs with contingencies
+                    epochs = [x for x in contingency_epochs if x in epochs]
+
+                # Get brain regions for this nwb file name
+                brain_regions = (BrainRegionCohort & key).fetch1("brain_regions")
+
+                # Loop through epochs
+                for epoch in epochs:
+
+                    epochs_description = EpochsDescription().lookup_epochs_description(nwb_file_name, [epoch])
+
+                    # Update key with epoch and epochs_description
+                    key.update({"epoch": epoch, "epochs_description": epochs_description})
+
+                    # Loop through unit subset iterations
+                    for unit_subset_iteration in unit_subset_iterations:
+
+                        brain_region_units_param_name = BrainRegionUnitsParams().lookup_single_epoch_param_name(
+                            nwb_file_name, epoch, min_epoch_mean_firing_rate, unit_subset_type,
+                            unit_subset_size, unit_subset_iteration)
+
+                        key.update({"brain_region_units_param_name": brain_region_units_param_name})
+
+                        # Loop through brain regions
+                        for brain_region in brain_regions:
+
+                            # Update key with brain region
+                            key.update({"brain_region": brain_region})
+
+                            # Update key with curation name
+                            curation_name = (CurationSet & {
+                                "nwb_file_name": nwb_file_name,
+                                "brain_region_cohort_name": key["brain_region_cohort_name"],
+                                "curation_set_name": curation_set_name}).get_curation_name(
+                                brain_region, epochs_description)
+                            key.update({"curation_name": curation_name})
+
+                            # Continue if no entry in BrainRegionUnits
+                            if len(BrainRegionUnits & key) == 0:
+                                continue
+
+                            # Otherwise update list of keys
+                            keys.append(copy.deepcopy(key))
+        return keys
+
+    def get_vector_df_across_entries(self, keys=None, use_multiprocessing=True, **kwargs):
+
+        if use_multiprocessing:
+            import multiprocessing as mp
+            from src.jguides_2024.utils.parallelization_helpers import show_error
+
+        if keys is None:
+            keys = self.get_keys_across_entries(**kwargs)
+
+        data_list = []
+
+        store_key_names = [
+            "subject_id", "nwb_file_name", "epoch", "brain_region_units_param_name", "brain_region"]
+
+        for key in keys:
+            check_membership(store_key_names, key)
+
+        def append_result(x):
+            data_list.append(x)
+
+        if use_multiprocessing:
+            pool = mp.Pool(mp.cpu_count())
+
+            for key in keys:
+                pool.apply_async(
+                    _get_vector_df, args=(self, key, store_key_names), callback=append_result, error_callback=show_error)
+
+            pool.close()
+            pool.join()  # waits until all processes done before running next line
+
+        else:
+            for key_idx, key in enumerate(keys):
+                print_iteration_progress(key_idx, len(keys), 20)
+                data_list.append(_get_vector_df(self, key, store_key_names))
+
+        return df_from_data_list(data_list, store_key_names + ["vector_df"])
+
+
+def _get_vector_df(table, entry_key, store_key_names):
+    dfs = (table & entry_key).fetch1_dataframes().vector_df
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [dfs]
 
 
 def _default_metric_vector_type():
@@ -354,7 +540,10 @@ class CovariateFRVecAveSelBase(SelBase):
 
         # By default, return all covariate firing rate vector params. Can override in child class to restrict.
 
-        return set(self._fr_vec_table().fetch(self._get_main_table()().get_cov_fr_vec_meta_param_name()))
+        return set(self._fr_vec_table().fetch(self._get_cov_fr_vec_meta_param_name()))
+
+    def _get_cov_fr_vec_meta_param_name(self):
+        return self._fr_vec_table()()._get_params_table()().meta_param_name()
 
     def _get_potential_keys(self, key_filter=None, populate_tables=False):
 
@@ -365,7 +554,7 @@ class CovariateFRVecAveSelBase(SelBase):
         # Define covariate firing rate vector params
         cov_fr_vec_param_names = self._get_cov_fr_vec_param_names()
         # If param passed, restrict to this
-        cov_fr_vec_meta_param_name = self._get_main_table()().get_cov_fr_vec_meta_param_name()
+        cov_fr_vec_meta_param_name = self._get_cov_fr_vec_meta_param_name()
         if cov_fr_vec_meta_param_name in key_filter:
             cov_fr_vec_param_name = key_filter[cov_fr_vec_meta_param_name]
             check_membership([cov_fr_vec_param_name], cov_fr_vec_param_names)
@@ -394,6 +583,12 @@ class CovariateFRVecAveSelBase(SelBase):
             epoch = int(key.pop("epoch"))
             run_num = RunEpoch().get_run_num(key["nwb_file_name"], epoch)
             epochs_description = EpochsDescription().format_single_run_description(run_num)
+
+            # Continue if contingency not handle or center
+            contingency = TaskIdentification().get_contingency(key["nwb_file_name"], epoch)
+            if contingency not in ["handleAlternation", "centerAlternation"]:
+                continue
+
             key.update({"epochs_description": epochs_description})
             epochs = (EpochsDescription & key).fetch1("epochs")
             if all([len(fr_vec_table & {**key, **{"epoch": epoch}}) == 1 for epoch in epochs]):
@@ -404,6 +599,7 @@ class CovariateFRVecAveSelBase(SelBase):
                 if populate_tables:
                     fr_vec_table().populate(key)
 
+        print(f"Returning {len(potential_keys)} potential keys...")
         return potential_keys
 
 
@@ -425,8 +621,9 @@ class CovariateFRVecAveBase(ComputedBase):
 
         # Get map from epoch to potentially rewarded paths
         rewarded = True
-        pairs_map = MazePathWell().get_path_name_pair_types_map(
-            nwb_file_name, valid_epochs, rewarded, include_reversed_pairs)
+        pairs_map = {epoch: MazePathWell().get_path_name_pair_types_map(
+            nwb_file_name, epoch, rewarded_paths=rewarded, include_reversed_pairs=include_reversed_pairs)
+        for epoch in valid_epochs}
 
         return valid_epochs, pairs_map
 
@@ -547,11 +744,14 @@ class CovariateFRVecAveBase(ComputedBase):
         # Use map to get comprising labels for joined labels
         return epoch_1, epoch_2, label_1, label_2
 
-    def get_label_relationship_metric_map(self, relationships=None):
+    def get_label_relationship_metric_map(self, relationships=None, verbose=False):
         # Get map from label (e.g. path) pair relationship to df with instances of metric on average
         # difference vectors with same element pair, same epoch, same or different label
 
         valid_epochs, pairs_map = self._get_label_relationship_inputs()
+
+        if verbose:
+            print(f"\nGetting label relationship metric map. Available relationships (in pairs_map): {pairs_map}\n")
 
         # Get relationships if not passed
         if relationships is None:
@@ -699,8 +899,25 @@ class CovariateFRVecAveBase(ComputedBase):
         meta_param_name = self.get_cov_fr_vec_meta_param_name()
         cov_fr_vec_param_name = copy.deepcopy(kwargs).pop(meta_param_name, None)
 
-        return fetch1_tolerate_no_entry(
-            params_table & {meta_param_name: cov_fr_vec_param_name}, "labels_description")
+        # Make key for querying params table
+        params_table_key = {meta_param_name: cov_fr_vec_param_name}
+
+        # Single covariate tables (e.g. PathFRVec)
+        if "labels_description" in get_table_secondary_key_names(params_table):
+            return fetch1_tolerate_no_entry(
+                params_table & params_table_key, "labels_description")
+        # Multiple covariate table
+        elif params_table.table_name == "multi_cov_f_r_vec_params":
+            labels_descriptions = []
+            multi_cov_fr_vec_params = (params_table & params_table_key).fetch1("multi_cov_fr_vec_params")
+            for sub_table_name, sub_key in zip(multi_cov_fr_vec_params["table_names"], multi_cov_fr_vec_params["keys"]):
+                sub_params_table = get_table(sub_table_name)()._get_params_table()
+                labels_description = fetch1_tolerate_no_entry(
+                    sub_params_table & sub_key, "labels_description")
+                labels_descriptions.append(labels_description)
+            return check_return_single_element(labels_descriptions).single_element
+        else:
+            raise Exception(f"case not accounted for in getting labels description")
 
     def _get_df_outer_loop(self, inner_fn, nwb_file_names, epochs_descriptions_names, verbose,
                            res_epoch_spikes_sm_param_name, zscore_fr,
@@ -735,7 +952,9 @@ class CovariateFRVecAveBase(ComputedBase):
         # TODO (feature): define programmatically based on upstream table
         for k in ["ppt_dig_param_name", "path_ave_fr_vec_param_name", "path_fr_vec_st_ave_param_name",
                   "time_rel_wa_dig_single_axis_param_name", "time_rel_wa_dig_param_name",
-                  "time_rel_wa_ave_fr_vec_param_name", "time_rel_wa_fr_vec_st_ave_param_name"]:
+                  "time_rel_wa_ave_fr_vec_param_name", "time_rel_wa_fr_vec_st_ave_param_name",
+                  "multi_cov_ave_fr_vec_param_name", "multi_cov_fr_vec_st_ave_param_name"
+                  ]:
             if k in kwargs:
                 key.update({k: kwargs[k]})
 
@@ -974,24 +1193,31 @@ class CovariateFRVecAveBase(ComputedBase):
         labels_description = self.get_labels_description(kwargs)
         if labels_description == "none":
             pass
-        elif labels_description == "even_odd_trials":
-            valid_labels = np.concatenate(
-                [[MazePathWell.get_even_odd_trial_name(x, even_odd_text=even_odd_text) for x in valid_labels]
-                    for even_odd_text in MazePathWell.even_odd_trial_text()])
+
         elif labels_description in ["stay_leave_trials", "stay_leave_trials_pre_departure"]:
             valid_labels = np.concatenate(
                 [[MazePathWell.get_stay_leave_trial_path_name(x, trial_text=trial_text) for x in valid_labels]
                     for trial_text in MazePathWell.stay_leave_trial_text()])
-        elif labels_description == "even_odd_stay_trials":
-            valid_labels = [MazePathWell.get_stay_leave_trial_path_name(
-                x, trial_text=MazePathWell.stay_leave_trial_text("stay")) for x in valid_labels]
-            valid_labels = np.concatenate(
-                [[MazePathWell.get_even_odd_trial_name(x, even_odd_text=even_odd_text) for x in valid_labels]
-                    for even_odd_text in MazePathWell.even_odd_trial_text()])
-        elif labels_description == "correct_incorrect_trials":
-            valid_labels = np.concatenate([[MazePathWell.get_correct_incorrect_trial_text(
-                x, correct_incorrect_text=correct_incorrect_trial_text) for x in valid_labels]
-                for correct_incorrect_trial_text in MazePathWell.correct_incorrect_trial_text()])
+
+        elif labels_description in [
+            "correct_incorrect_trials", "correct_incorrect_stay_trials",
+            "even_odd_trials", "even_odd_stay_trials", "even_odd_correct_incorrect_stay_trials"]:
+
+            # Add stay
+            if "stay_trials" in labels_description:
+                valid_labels = [MazePathWell.get_stay_leave_trial_path_name(
+                    x, trial_text=MazePathWell.stay_leave_trial_text("stay")) for x in valid_labels]
+            # Add correct/incorrect
+            if "correct_incorrect" in labels_description:
+                valid_labels = np.concatenate([[MazePathWell.get_correct_incorrect_trial_text(
+                    x, correct_incorrect_text=correct_incorrect_trial_text) for x in valid_labels]
+                    for correct_incorrect_trial_text in MazePathWell.correct_incorrect_trial_text()])
+            # Add even/odd
+            if "even_odd" in labels_description:
+                valid_labels = np.concatenate(
+                    [[MazePathWell.get_even_odd_trial_name(x, even_odd_text=even_odd_text) for x in valid_labels]
+                        for even_odd_text in MazePathWell.even_odd_trial_text()])
+
         else:
             raise Exception(f"{labels_description} not valid labels_description")
 
@@ -1005,10 +1231,12 @@ class CovariateFRVecAveBase(ComputedBase):
 
         # Case 1: No further restriction
         if labels_description in [
-            "none", "stay_leave_trials", "stay_leave_trials_pre_departure", "correct_incorrect_trials"]:
+            "none", "stay_leave_trials", "stay_leave_trials_pre_departure", "correct_incorrect_trials",
+            "correct_incorrect_stay_trials"]:
             pass
         # Case 2: Restrict to across even and odd trials
-        elif labels_description in ["even_odd_trials", "even_odd_stay_trials"]:
+        elif labels_description in [
+            "even_odd_trials", "even_odd_stay_trials", "even_odd_correct_incorrect_stay_trials"]:
             labels_bool = [
                 MazePathWell.even_odd(df_row.label_1, df_row.label_2) for idx, df_row in diag_ratio_df.iterrows()]
         else:
@@ -1287,9 +1515,24 @@ class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
         elif labels_description == "correct_incorrect_trials":
             return [
                 "same_path_correct_correct_trials", "same_path_correct_incorrect_trials",
-                "same_path_incorrect_incorrect_trials", "outbound_correct_correct_trials",
-                "outbound_correct_incorrect_trials", "outbound_correct_incorrect_trials",
+                "same_path_incorrect_incorrect_trials",
+
+                "outbound_correct_correct_trials", "outbound_correct_incorrect_trials",
+                "outbound_correct_incorrect_trials",
+
                 "same_path_outbound_correct_correct_trials",
+            ]
+
+        # Correct/incorrect trials by path
+        elif labels_description == "correct_incorrect_stay_trials":
+            return [
+                "same_path_correct_correct_stay_trials", "same_path_correct_incorrect_stay_trials",
+                "same_path_incorrect_incorrect_stay_trials",
+
+                "outbound_correct_correct_stay_trials", "outbound_correct_incorrect_stay_trials",
+                "outbound_correct_incorrect_stay_trials",
+
+                "same_path_outbound_correct_correct_stay_trials",
             ]
 
         # Same path comparison
@@ -1384,9 +1627,21 @@ class CovariateFRVecTrialAveBase(CovariateFRVecAveBase):
             elif label_name == "end_well":
                 return ["same_end_well_even_odd_stay_trials", "different_end_well_even_odd_stay_trials"]
 
+        elif labels_description == "even_odd_correct_incorrect_stay_trials":
+            # By path
+            if label_name == "path":
+                return [
+                    "same_path_even_odd_correct_stay_trials", "same_turn_even_odd_correct_stay_trials",
+                    "different_turn_well_even_odd_correct_stay_trials"]
+            # By end well
+            elif label_name == "end_well":
+                return [
+                    "same_end_well_even_odd_correct_stay_trials", "different_end_well_even_odd_correct_stay_trials"]
+
         # Otherwise return same / different turn comparison
         elif labels_description == "none":
             return ["same_turn", "different_turn_well"]
+
         else:
             raise Exception(f"default relationships not defined for labels_description {labels_description}")
 
@@ -1546,21 +1801,32 @@ class PathWellPopSummBase(ComputedBase):
 
         # ...Path and well relationships: colors correspond to brain regions
         relationship_vals_list = [[
+
             # Darkest tint
-            "same_path", "same_path_stay_stay_trials", "same_path_even_odd_trials", "same_well",
-            "same_end_well_even_odd_stay_trials",
-            "same_path_correct_correct_trials",
+            "same_path", "same_path_stay_stay_trials", "same_path_even_odd_trials",
+            "same_path_even_odd_correct_stay_trials",
+            "same_well", "same_end_well_even_odd_stay_trials",
+            "same_path_correct_correct_trials", "same_path_correct_correct_stay_trials",
             "same_path_outbound_correct_correct_trials",
+            "same_path_outbound_correct_correct_stay_trials",
             ], [
+
             # Intermediate tint
-            "same_turn", "same_turn_even_odd_trials", "same_path_stay_leave_trials",
-            "same_path_correct_incorrect_trials"], [
+            "same_turn", "same_turn_even_odd_trials", "same_turn_even_odd_correct_stay_trials",
+            "same_path_stay_leave_trials", "same_path_correct_incorrect_trials",
+            "same_path_correct_incorrect_stay_trials",
+        ], [
+
             # Lightest tint
             "different_turn_well", "different_turn_well_even_odd_trials", "different_turn_well_even_odd_stay_trials",
+            "different_turn_well_even_odd_correct_stay_trials",
             "different_well", "different_end_well_even_odd_stay_trials",
             "same_path_leave_leave_trials",
             "same_path_incorrect_incorrect_trials",
-            "outbound_correct_correct_trials"
+            "same_path_incorrect_incorrect_stay_trials",
+            "outbound_correct_correct_trials",
+            "outbound_correct_correct_stay_trials"
+            "outbound_correct_incorrect_stay_trials",
             ]]
 
         colors_map = BrainRegionColor().tint_colors(brain_regions, num_tints=3)
@@ -1569,17 +1835,11 @@ class PathWellPopSummBase(ComputedBase):
                 for relationship_val in relationship_vals:
                     data_list.append((brain_region_val, relationship_val, color))
 
-        # ...Same path correct and outbound correct difference: colors correspond to brain regions
+        # ...Colors correspond to brain regions:
+        # Same path correct and outbound correct difference
+        # Stay/leave difference
         relationship_vals = [
             "outbound_correct_correct_trials_same_path_outbound_correct_correct_trials",
-        ]
-        for brain_region in brain_regions:
-            for relationship_val in relationship_vals:
-                data_list.append(
-                    (brain_region, relationship_val, BrainRegionColor().get_brain_region_color(brain_region)))
-
-        # ...Stay/leave difference: colors correspond to brain regions
-        relationship_vals = [
             "same_path_stay_leave_trials_same_path_stay_stay_trials",
         ]
         for brain_region in brain_regions:
@@ -1595,12 +1855,15 @@ class PathWellPopSummBase(ComputedBase):
         relationship_vals_list = [[
             # Darkest tint
             "same_path", "same_path_stay_stay_trials", "same_path_correct_correct_trials",
+            "same_path_correct_correct_stay_trials",
             "same_path_stay_stay_trials_same_path_stay_stay_trials",
             "same_path_stay_leave_trials_same_path_stay_stay_trials",
             "same_path_leave_leave_trials_same_path_stay_stay_trials"
         ], [
             # Medium tint
-            "same_path_stay_leave_trials", "same_path_correct_incorrect_trials"], [
+            "same_path_stay_leave_trials", "same_path_correct_incorrect_trials",
+            "same_path_correct_incorrect_stay_trials"], [
+
             # Lightest tint
             "same_path_leave_leave_trials", "same_path_incorrect_incorrect_trials",
         ]]
@@ -1748,6 +2011,11 @@ class PathWellPopSummBase(ComputedBase):
         if ax is None:
             _, ax = plt.subplots(figsize=(5, 2))
 
+        # Get type of x val to plot if not passed
+        x_val_type = plot_params.pop("x_val_type", None)
+        if x_val_type is None:
+            x_val_type = "x_val"
+
         # Get x label if not passed
         xlabel = plot_params.pop("xlabel", None)
         if xlabel is None:
@@ -1867,7 +2135,7 @@ class PathWellPopSummBase(ComputedBase):
 
                 # Plot average and confidence bounds
                 label = " ".join(list(condition_key.values()))
-                plot_ave_conf(ax, df_subset.x_val, df_subset.ave_val, conf_bounds, color=color, label=label)
+                plot_ave_conf(ax, df_subset[x_val_type], df_subset.ave_val, conf_bounds, color=color, label=label)
 
             # Plot epoch average if indicated
             if show_single_epoch:
@@ -1902,7 +2170,7 @@ class PathWellPopSummBase(ComputedBase):
                             # Plot
                             ax.plot(df_filter_columns(metric_epoch_df_subset_, {
                                     "epochs_description": epochs_description}).set_index(
-                                "x_val").val, linewidth=.5, linestyle=linestyle, color=color, zorder=10,
+                                x_val_type).val, linewidth=.5, linestyle=linestyle, color=color, zorder=10,
                                     alpha=line_alpha)
 
         # If brain region difference for one pair of brain regions, add rectangles to denote brain region colors
@@ -2302,7 +2570,8 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
             "time_rel_wa_dig_single_axis_param_name",
             "time_rel_wa_ave_fr_vec_param_name", "time_rel_wa_fr_vec_st_ave_param_name",
             "path_fr_vec_param_name", "ppt_dig_param_name", "path_ave_fr_vec_param_name",
-            "path_fr_vec_st_ave_param_name"] if k in key}
+            "path_fr_vec_st_ave_param_name", "multi_cov_fr_vec_param_name",
+            "multi_cov_fr_vec_st_ave_param_name", "multi_cov_ave_fr_vec_param_name"] if k in key}
         kwargs.update({"label_name": label_name})
 
         # Get metric values
@@ -2886,6 +3155,7 @@ class PathFRVecSummBase(CovariateFRVecAveSummBase):
         # Return default params
         return params
 
+
 class TimeRelWAFRVecSummBase(CovariateFRVecAveSummBase):
 
     def get_ordered_relationships(self):
@@ -2929,6 +3199,53 @@ class TimeRelWAFRVecSummBase(CovariateFRVecAveSummBase):
         return params
 
 
+class MultiCovFRVecSummBase(CovariateFRVecAveSummBase):
+
+    def get_ordered_relationships(self):
+
+        return [
+            "same_path_even_odd_correct_stay_trials",
+            "same_turn_even_odd_correct_stay_trials", "different_turn_well_even_odd_stay_trials",
+
+            "same_path_correct_correct_trials", "same_path_correct_incorrect_trials",
+            "same_path_incorrect_incorrect_trials", "outbound_correct_correct_trials",
+            "outbound_correct_incorrect_trials", "outbound_incorrect_incorrect_trials",
+            "outbound_correct_correct_trials_same_path_outbound_correct_correct_trials",
+
+            "same_path_correct_correct_stay_trials", "same_path_correct_incorrect_stay_trials",
+            "same_path_incorrect_incorrect_stay_trials", "outbound_correct_correct_stay_trials",
+            "outbound_correct_incorrect_stay_trials", "outbound_incorrect_incorrect_stay_trials",
+        ]
+
+    def _get_x_lims(self):
+        # TODO: code this
+        return None
+
+    def _get_xticks(self):
+        return self._get_x_lims()
+
+    def _get_x_text(self):
+        # Get name of x value as friendly text
+        return ""
+
+    def extend_plot_results(self, **kwargs):
+
+        super().extend_plot_results(**kwargs)
+
+        # Vertical lines to denote track segments
+        if not kwargs["empty_plot"]:
+            ax = kwargs["ax"]
+            plot_junction_fractions(ax)
+
+    # Override parent class method so can add params specific to path fr vec tables
+    def get_default_table_entry_params(self):
+
+        params = super().get_default_table_entry_params()
+
+        # Return default params
+        return params
+
+
 def format_metric_name(metric_name):
     metric_name_map = {"cosine_similarity": "Cosine similarity", "euclidean_distance": "Euclidean distance"}
     return metric_name_map[metric_name]
@@ -2940,7 +3257,8 @@ class PopulationAnalysisParamsBase(SecKeyParamsBase):
     def _default_brain_region_units_cohort_types():
 
         eps_units_param_name = EpsUnitsParams().lookup_param_name([.1])
-        param_sets = [[eps_units_param_name, 0, "target_region", None, [None]],
+        param_sets = [
+            # [eps_units_param_name, 0, "target_region", None, [None]],
             [eps_units_param_name, 1, "rand_target_region", 50, [0]],
             [eps_units_param_name, 1, "rand_target_region", 50, np.arange(0, 10)]]
 
@@ -3018,7 +3336,9 @@ class CovariateFRVecAveSummParamsBase(PopulationAnalysisParamsBase):
 class PopulationAnalysisSelBase(SelBase):
 
     def _recording_set_name_types(self):
-        return ["Haight_rotation", "Haight_rotation_rat_cohort"]
+        return [
+            "Haight_rotation", "Haight_rotation_rat_cohort", "single_epoch_testing",
+            "Haight_rotation_handleAlternation"]
 
     def get_recording_set_names(self, key_filter):
         # Return list of recording set names for a given key_filter, for use in populating tables
@@ -3219,7 +3539,10 @@ class PopulationAnalysisSelBase(SelBase):
 
                         # Get key to param name map
                         param_name_map_key = self._get_param_name_map_key(key, brain_region_units_cohort_type)
-
+                        if debug_text:
+                            print(f"\nparam_name_map_key: {param_name_map_key}")
+                            print(f"\nparam_name_map: {param_name_map}")
+                            print(f"\nparam_name_map_key in param_name_map: {param_name_map_key in param_name_map}")
                         # If key in param name map, add to table keys
                         if param_name_map_key in param_name_map:
                             for summ_param_name in param_name_map[param_name_map_key]:
@@ -3252,7 +3575,7 @@ class CovariateFRVecAveSummSelBase(PopulationAnalysisSelBase):
          # Non rat cohort
          (recording_set_name, boot_set_name) for recording_set_name in
          RecordingSet().get_recording_set_names(
-             key_filter, ["Haight_rotation", "first_day_learning_single_epoch"])
+             key_filter, ["Haight_rotation", "single_epoch_testing"])
          for boot_set_name in self._default_noncohort_boot_set_names()]
 
         metric_names_metric_processing_names = [
