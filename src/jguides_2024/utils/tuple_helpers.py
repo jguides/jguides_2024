@@ -45,10 +45,9 @@ def reverse_pair(pair):
 
 def add_reversed_pairs(pairs):
     reversed_pairs = [reverse_pair(x) for x in pairs]
-    # Raise error if any of reversed pairs composed of different elements are in pairs (in future if this is expected,
-    # can update code to pass flag to
-    # allow this)
+    # Raise error if any of reversed pairs composed of different elements are already in pairs (
+    # in future if this is expected, can update code to pass flag to allow this)
     unique_element_reversed_pairs = [x for x in reversed_pairs if x[0] != x[1]]
     if any([x in pairs for x in unique_element_reversed_pairs]):
         raise Exception(f"at least one reversed pair already in passed pairs")
-    return list(pairs) + reversed_pairs
+    return list(pairs) + unique_element_reversed_pairs

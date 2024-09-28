@@ -93,8 +93,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         min_epoch_mean_firing_rate = .1
         primary_kernel_sds = [.1]
         primary_path_fr_vec_param_names = ["none"]  # pair all possible combinations with these
-        primary_lass\
-            = PptDigParams().lookup_param_name([ppt_bin_width])
+        primary_ppt_dig_param_name = PptDigParams().lookup_param_name([ppt_bin_width])
         curation_set_name = "runs_analysis_v1"
         brain_region_cohort_name = "all_targeted"
         primary_features = {

@@ -11,7 +11,8 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
     PathWellFRVecSummBase, PopulationAnalysisParamsBase, \
     PopulationAnalysisSelBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SelBase, ParamsBase
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_key_filter, make_param_name
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_key_filter, make_param_name, delete_, \
+    get_table_secondary_key_names
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert_analysis_table_entry
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_nwb_file_name_epochs_description
@@ -340,6 +341,9 @@ class FRDiffVecCosSimPptNnAveSel(FRDiffVecCosSimVarNnAveSelBase):
     def _get_covariate_table():
         return PptInterp
 
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimPptNnAve], key, safemode)
+
 
 @schema
 class FRDiffVecCosSimPptNnAve(FRDiffVecCosSimVarNnAveBase):
@@ -381,6 +385,9 @@ class FRDiffVecCosSimPptNnAve(FRDiffVecCosSimVarNnAveBase):
         # Define ppt bins
         return Ppt.get_ppt_bin_edges(bin_width)
 
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimPptNnAveSummSel], key, safemode)
+
 
 """
 Notes on FRDiffVecCosSimWANnAve tables setup:
@@ -419,6 +426,9 @@ class FRDiffVecCosSimWANnAveSel(FRDiffVecCosSimVarNnAveSelBase):
     @staticmethod
     def _get_covariate_table():
         return TimeRelWA
+
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimWANnAve], key, safemode)
 
 
 @schema
@@ -508,6 +518,9 @@ class FRDiffVecCosSimWANnAve(FRDiffVecCosSimVarNnAveBase):
         plot_y = self.get_pre_post_quantites_single_axis("mean_cos_sim", object_id_name)
         conf_bounds = self.get_pre_post_quantites_single_axis("mean_cos_sim_conf", object_id_name)
         self._plot_results(ax, x_vals, plot_y, conf_bounds, **plot_params)
+
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimWANnAveSummSel], key, safemode)
 
 
 def average_value_in_trials_in_bins(x1, x2, x1_bin_edges, trial_intervals, x2_name="x2", tolerate_nan=True):
@@ -673,6 +686,9 @@ class FRDiffVecCosSimCovNnAveSummParamsBase(PopulationAnalysisParamsBase):
         # Return parameters
         return params
 
+    def get_params(self):
+        return {k: self.fetch1(k) for k in get_table_secondary_key_names(self)}
+
 
 class FRDiffVecCosSimCovNnAveSummSelBase(PopulationAnalysisSelBase):
 
@@ -691,7 +707,7 @@ class FRDiffVecCosSimCovNnAveSummSelBase(PopulationAnalysisSelBase):
              # Non rat cohort
              (recording_set_name, boot_set_name) for recording_set_name in
              RecordingSet().get_recording_set_names(
-                 key_filter, ["Haight_rotation", "first_day_learning_single_epoch"])
+                 key_filter, ["Haight_rotation"])
              for boot_set_name in self._default_noncohort_boot_set_names()]
 
         param_name_map = dict()
@@ -783,6 +799,16 @@ class FRDiffVecCosSimCovNnAveSummBase(PathWellFRVecSummBase):
         # average difference values across brain regions
         elif boot_set_name in ["brain_region_diff", "brain_region_diff_rat_cohort"]:
 
+            target_column_name = "brain_region"
+            pairs_order = self._get_brain_region_order_for_pairs()
+            vals_index_name = self._get_vals_index_name()
+            eps_labels_resample_col_name = None
+            exclude_columns = None
+            metric_df2, resample_levels2, ave_group_column_names2 = self._get_boot_diff_params(
+                target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
+                eps_labels_resample_col_name, exclude_columns)
+
+            # ***
             # First redefine metric_df to reflect difference between val for different brain regions
             target_column_name = "brain_region"
             # ...Define pairs of brain regions
@@ -802,6 +828,11 @@ class FRDiffVecCosSimCovNnAveSummBase(PathWellFRVecSummBase):
             # ...Alter params based on whether rat cohort
             resample_levels, ave_group_column_names = self._alter_boot_params_rat_cohort(
                 boot_set_name, resample_levels, ave_group_column_names)
+            # ***
+
+            raise Exception(f"Verify that metric_df2 == metric_df, resample_levels2 == resample_levels, and "
+                            f"ave_group_column_names2 == ave_group_column_names, then delete what is between *** "
+                            f"and *** (old code), then remove this exception if all values equal")
 
         # Raise exception if boot set name not accounted for in code
         else:
@@ -834,8 +865,9 @@ class FRDiffVecCosSimCovNnAveSummBase(PathWellFRVecSummBase):
 
     def _get_val_lims(self, **kwargs):
         # Get a set range for value, e.g. for use in plotting value on same range across plots
+        params_table = self._get_params_table()()
         boot_set_name = self.get_upstream_param("boot_set_name")
-        if boot_set_name in self._get_params_table()._valid_brain_region_diff_boot_set_names():
+        if boot_set_name in params_table._valid_brain_region_diff_boot_set_names():
             return [-.5, .3]
         return [0, .8]
 
@@ -952,6 +984,9 @@ class FRDiffVecCosSimWANnAveSummSel(FRDiffVecCosSimCovNnAveSummSelBase):
     def _upstream_table():
         return FRDiffVecCosSimWANnAve
 
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimWANnAveSumm], key, safemode)
+
 
 @schema
 class FRDiffVecCosSimWANnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
@@ -1042,6 +1077,9 @@ class FRDiffVecCosSimPptNnAveSummSel(FRDiffVecCosSimCovNnAveSummSelBase):
     @staticmethod
     def _upstream_table():
         return FRDiffVecCosSimPptNnAve
+
+    def delete_(self, key, safemode=True):
+        delete_(self, [FRDiffVecCosSimPptNnAveSumm], key, safemode)
 
 
 @schema

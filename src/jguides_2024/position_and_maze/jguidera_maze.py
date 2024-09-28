@@ -1211,6 +1211,9 @@ class MazePathWell:
     def get_path_fns_map(cls):
         # Map from type of path pair relationship to function for obtaining instances of that type
         return {"same_turn": cls.get_same_turn_path_names,
+
+                "same_turn_correct_correct_stay_trials": cls.get_same_turn_path_names,
+
                 "same_turn_even_odd_trials": cls.get_same_turn_path_names,
                 "same_turn_even_odd_stay_trials": cls.get_same_turn_path_names,
                 "same_turn_even_odd_correct_stay_trials": cls.get_same_turn_path_names,
@@ -1220,9 +1223,13 @@ class MazePathWell:
                 "different_turn_well_even_odd_stay_trials": cls.get_different_turn_well_path_names,
                 "different_turn_well_even_odd_correct_stay_trials": cls.get_different_turn_well_path_names,
 
+                "different_turn_well_correct_correct_stay_trials": cls.get_different_turn_well_path_names,
+
                 "inbound": cls.get_inbound_path_names,
 
                 "inbound_even_odd_correct_stay_trials": cls.get_inbound_path_names,
+
+                "inbound_correct_correct_stay_trials": cls.get_inbound_path_names,
 
                 "outbound": cls.get_outbound_path_names,
 
@@ -1378,9 +1385,13 @@ class MazePathWell:
         if name in [
             "same_turn", "same_turn_even_odd_trials", "same_turn_even_odd_stay_trials",
             "same_turn_even_odd_correct_stay_trials",
+            "same_turn_correct_correct_stay_trials",
+
             "different_turn_well",
+
             "different_turn_well_even_odd_trials", "different_turn_well_even_odd_stay_trials",
-            "different_turn_well_even_odd_correct_stay_trials"
+            "different_turn_well_even_odd_correct_stay_trials",
+            "different_turn_well_correct_correct_stay_trials"
         ]:
             param_names = ["nwb_file_name", "epoch", "contingency", "rewarded_paths"]
             path_name_pairs = fn(**_get_param_names(params, param_names))
@@ -1395,6 +1406,8 @@ class MazePathWell:
             "outbound_incorrect_incorrect_stay_trials",
 
             "inbound_even_odd_correct_stay_trials", "outbound_even_odd_correct_stay_trials",
+
+            "inbound_correct_correct_stay_trials",
 
         ]:
             param_names = ["nwb_file_name", "epoch", "contingency"]
@@ -1557,7 +1570,7 @@ class MazePathWell:
                 "nwb_file_name": nwb_file_name, "epoch": epoch, "contingency": contingency,
                 "rewarded_paths": rewarded_paths, "symmetric_suffix": symmetric_suffix})
 
-            # If include reversed pairs, then for each (a, b), add (b, a)
+            # If include reversed pairs, then for each (a, b), add (b, a) if a != b
             if include_reversed_pairs:
                 pair_types = add_reversed_pairs(pair_types)
 

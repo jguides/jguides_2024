@@ -10,7 +10,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import unique_
     delete_, get_epochs_id
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionSortGroup
-from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, EpochCohort, RunEpoch
+from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, EpochCohort, RunEpoch, EpochsDescriptions
 from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.spikes.jguidera_res_spikes import ResEpochSpikesSmDs, populate_jguidera_res_spikes
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, populate_jguidera_unit, \
@@ -102,12 +102,26 @@ class FRVecSel(SelBase):
         brup_epd_map = dict_comprehension(
             *BrainRegionUnitsParams().fetch("brain_region_units_param_name", "epochs_description"))
 
-        # Get map from (nwb_file_name, epochs_description) to epoch, in case of single epochs
-        nwb_file_names, epochs_descriptions, epochs = EpochsDescription().fetch(
+        # Get map from (nwb_file_name, epochs_description) to epoch, in case of valid single epochs
+
+        # Get map that indicates which epochs are valid for which nwb files
+        epochs_descriptions_name = "valid_single_contingency_runs"
+        key = {"epochs_descriptions_name": epochs_descriptions_name}
+        valid_nwb_file_name_epochs_map = (EpochsDescriptions & key).get_nwb_file_name_epochs_map()
+        # Get starting nwb files / epochs
+        nwb_file_names, epochs_descriptions, epochs_list = EpochsDescription().fetch(
             "nwb_file_name", "epochs_description", "epochs")
-        valid_bool = [len(x) == 1 for x in epochs]
+        # add nwb file names with empty epochs list to avoid error below
+        for nwb_file_name in nwb_file_names:
+            if nwb_file_name not in valid_nwb_file_name_epochs_map:
+                valid_nwb_file_name_epochs_map[nwb_file_name] = []  # indicate no valid epochs
+
+        valid_bool = [
+            np.logical_and(
+                len(epochs) == 1, epochs[0] in valid_nwb_file_name_epochs_map[nwb_file_name])
+            for nwb_file_name, epochs in zip(nwb_file_names, epochs_list)]
         nwbf_epd_ep_map = {k: v for k, v in zip(list(zip(nwb_file_names[valid_bool], epochs_descriptions[valid_bool])),
-                                                [x[0] for x in epochs[valid_bool]])}
+                                                [x[0] for x in epochs_list[valid_bool]])}
 
         # Loop through keys of BrainRegionUnits which has implicit epoch information in 'brain_region_units_param_name',
         # and find consistent entries in the intersection of ResTimeBinsPoolSel and TaskIdentification,
@@ -389,7 +403,9 @@ class FRVec(ComputedBase):
         from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector_euclidean_distance import FRVecEucDistSel
         from src.jguides_2024.firing_rate_vector.jguidera_path_firing_rate_vector import PathFRVecSel
         from src.jguides_2024.firing_rate_vector.jguidera_well_event_firing_rate_vector import TimeRelWAFRVecSel
-        delete_(self, [FRDiffVecCosSimSel, FRVecEucDistSel, PathFRVecSel, TimeRelWAFRVecSel], key, safemode)
+        from src.jguides_2024.firing_rate_vector.jguidera_post_delay_firing_rate_vector import RelPostDelFRVecSel
+        delete_(self, [
+            FRDiffVecCosSimSel, FRVecEucDistSel, PathFRVecSel, TimeRelWAFRVecSel, RelPostDelFRVecSel], key, safemode)
 
 
 def populate_jguidera_firing_rate_vector(

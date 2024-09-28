@@ -148,6 +148,11 @@ class FRDiffVecCosSim(ComputedBase):
         return np.mean(self.get_nn_cosine_similarity(
             n_neighbors, nn_restrictions, state_restrictions, populate_tables), axis=0)
 
+    def delete_(self, key, safemode=True):
+        from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_difference_vector_similarity_ave import \
+            FRDiffVecCosSimPptNnAveSel
+        delete_(self, [FRDiffVecCosSimPptNnAveSel], key, safemode)
+
 
 def populate_jguidera_firing_rate_difference_vector_similarity(
         key=None, tolerate_error=False, populate_upstream_limit=None, populate_upstream_num=None):

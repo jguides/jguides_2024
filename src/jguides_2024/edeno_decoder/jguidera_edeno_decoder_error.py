@@ -14,7 +14,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SelBase, SecKeyParamsBase, ComputedBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import populate_insert, \
     get_schema_table_names_from_file, insert_analysis_table_entry, \
-    unique_table_column_sets
+    unique_table_column_sets, get_table_secondary_key_names
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.edeno_decoder.jguidera_edeno_decoder_run import EdenoDecodeParams, EdenoDecode, \
     EdenoDecodeMAP
@@ -203,6 +203,9 @@ class EdenoDecodeErrSummParams(PopulationAnalysisParamsBase):
     def insert_defaults(self, **kwargs):
         EdenoDecodeErrSummBinParams().insert_defaults(**kwargs)
         super().insert_defaults(**kwargs)
+
+    def get_params(self):
+        return {k: self.fetch1(k) for k in get_table_secondary_key_names(self)}
 
 
 @schema

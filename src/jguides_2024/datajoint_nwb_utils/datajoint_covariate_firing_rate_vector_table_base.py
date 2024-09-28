@@ -23,7 +23,7 @@ from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnitsParams, BrainRegionUnitsCohortType, \
     EpsUnitsParams, BrainRegionUnitsFail, BrainRegionUnits
-from src.jguides_2024.task_event.jguidera_dio_trials import DioWellDDTrials
+from src.jguides_2024.task_event.jguidera_dio_trials import DioWellDDTrials, DioWellTrials
 from src.jguides_2024.task_event.jguidera_task_performance import strip_performance_outcomes
 from src.jguides_2024.time_and_trials.jguidera_time_relative_to_well_event import TimeRelWADigSingleAxisParams
 from src.jguides_2024.utils.array_helpers import array_to_tuple_list, on_off_diagonal_ratio
@@ -183,10 +183,23 @@ class CovariateFRVecBase(ComputedBase):
 
         dfs = []
         for epoch in (EpochsDescription & key).fetch1("epochs"):
+
+            # Get df for epoch
             df = (self & {**key, **{"epoch": epoch}}).fetch1_dataframe(object_id_name)
+
+            # Add epoch to df
             df["epoch"] = [epoch] * len(df)
+
+            # Add trial numbers within the epoch
+            bout_idxs_midpoints = np.mean(np.vstack(df.bout_idxs), axis=1)
+            dio_well_trials_key = {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
+            epoch_trial_numbers = (DioWellTrials & dio_well_trials_key).get_time_epoch_trial_nums(bout_idxs_midpoints)
+            df["epoch_trial_number"] = epoch_trial_numbers
+
+            # Append to list
             dfs.append(df)
 
+        # Return concatenated dfs
         return pd.concat(dfs, axis=0)
 
     def get_bin_centers(self):
@@ -707,9 +720,10 @@ class CovariateFRVecAveBase(ComputedBase):
 
         return df_subset  # TODO (feature): return another df with num_samples
 
+    # TODO: if remake tables that depend on this, change split character to ^
+    #  then use common eps_labels functions across all cases
     @staticmethod
     def _eps_labels_split_char():
-
         return "_"
 
     @classmethod
@@ -1662,6 +1676,9 @@ class PathWellPopSummBase(ComputedBase):
 
     def _get_vals_index_name(self, **kwargs):
 
+        # Default is to get vals index name from upstream table (can overwrite this method
+        # if different)
+
         if "key" not in kwargs:
             key = self.fetch1("KEY")
         else:
@@ -1782,8 +1799,8 @@ class PathWellPopSummBase(ComputedBase):
 
     def _get_brain_region_meta_name(self):
 
+        params_table = self._get_params_table()()
         boot_set_name = self.get_upstream_param("boot_set_name")
-        params_table = self._get_params_table()
         if boot_set_name in params_table._valid_brain_region_diff_boot_set_names() + \
                             params_table._valid_stay_leave_diff_brain_region_diff_boot_set_names() + \
                 params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names():
@@ -1862,10 +1879,14 @@ class PathWellPopSummBase(ComputedBase):
         ], [
             # Medium tint
             "same_path_stay_leave_trials", "same_path_correct_incorrect_trials",
-            "same_path_correct_incorrect_stay_trials"], [
+            "same_path_correct_incorrect_stay_trials",
+            "same_turn_correct_correct_stay_trials"
+        ], [
 
             # Lightest tint
             "same_path_leave_leave_trials", "same_path_incorrect_incorrect_trials",
+            "inbound_correct_correct_stay_trials", "outbound_correct_correct_stay_trials",
+            "different_turn_well_correct_correct_stay_trials"
         ]]
         color_vals = [.1, .4, .7]
         for relationship_vals, color_val in zip(relationship_vals_list, color_vals):
@@ -2091,7 +2112,7 @@ class PathWellPopSummBase(ComputedBase):
 
         # Get additional quantities based on key
 
-        # Get name of index from upstream table
+        # Get name of index
         vals_index_name = self._get_vals_index_name()
 
         # Get metric_df if plotting single epoch data
@@ -2534,6 +2555,69 @@ class PathWellFRVecSummBase(PathWellPopSummBase):
         return f"fr_vec{plot_name}{smooth_text}{zscore_text}{upstream_param_text}{summ_param_text}" + \
          f"{show_single_epoch_text}{brain_regions_text}"
 
+    def _get_boot_diff_params(
+            self, target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
+            eps_labels_resample_col_name="eps_labels", exclude_columns=None, debug_mode=False):
+        """
+        Get bootstrap parameters in cases where taking difference between values
+        :param target_column_name: str, column in metric_df that takes on different values for the entries with which
+        we find difference in values
+        :param metric_df: pandas df. Subtract values for pairs of entries for which all columns in metric_df take on
+        the same value, except for the column given by target_column_name, which takes on different values across
+        pairs of entries
+        :param pairs_order: desired order of values in target_column_name for subtraction
+        (e.g. mPFC_targeted - OFC_targeted for the column brain_region)
+        :param vals_index_name: str
+        :param boot_set_name: str, name of bootstrap parameter set
+        :param eps_labels_resample_col_name: str, name of eps_labels column for resampling
+        :param exclude_columns: list, names of columns to exclude when getting paired metric df (values at these
+        columns are allowed to differ across members of pair)
+        :return: df with metric
+        :return resample_levels: resample_levels_ in function hierarchical_bootstrap in hierarchical_bootstrap.py
+        :return ave_group_column_names: ave_group_column_names_ in function hierarchical_bootstrap in
+        hierarchical_bootstrap.py
+        """
+
+        # Define inputs if not passed
+        if exclude_columns is None:
+            exclude_columns = []
+
+        # Define parameters for bootstrap
+        # ...Define columns at which to resample during bootstrap, in order
+        eps_labels_list = []
+        if eps_labels_resample_col_name not in exclude_columns and eps_labels_resample_col_name is not None:
+            eps_labels_list = [eps_labels_resample_col_name]
+        resample_levels = [
+            "nwb_file_name_epochs_description"] + eps_labels_list + ["brain_region_units_param_name"]
+        # ...Define columns whose values to keep constant (no resampling across these)
+        col_name = unpack_single_element(
+            [x for x in ["relationship", "joint_relationship", "brain_region"] if x != target_column_name and
+             x in metric_df.columns])
+        x_names = [vals_index_name]
+        if "x_val" not in x_names:
+            x_names.append("x_val")
+        ave_group_column_names = x_names + [
+            self._get_joint_column_name(target_column_name), f"{target_column_name}_1",
+            f"{target_column_name}_2"] + [col_name]
+        # ...Alter params based on whether rat cohort
+        resample_levels, ave_group_column_names = self._alter_boot_params_rat_cohort(
+            boot_set_name, resample_levels, ave_group_column_names)
+
+        # Redefine metric_df to reflect difference between val for pair of conditions
+        # ...Define pairs of variable
+        target_column_pairs = get_val_pairs(np.unique(metric_df[target_column_name]), pairs_order)
+        # ...Define function for computing metric on brain region pairs
+        metric_pair_fn = self.metric_pair_diff
+        # ...Get df with paired metric
+        metric_df = self.get_paired_metric_df(metric_df, target_column_name, target_column_pairs, metric_pair_fn,
+                                              exclude_columns=exclude_columns)
+
+        if debug_mode and len(metric_df) == 0:
+            raise Exception
+
+        # Return parameters
+        return metric_df, resample_levels, ave_group_column_names
+
 
 class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
 
@@ -2809,66 +2893,6 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
         return namedtuple("EpsLabelsAve", "eps_labels_ave_metric_df exclude_columns eps_labels_resample_col_name")(
             eps_labels_ave_metric_df, exclude_columns, eps_labels_resample_col_name)
 
-    def _get_boot_diff_params(
-            self, target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
-            eps_labels_resample_col_name="eps_labels", exclude_columns=None, debug_mode=False):
-        """
-        Get bootstrap parameters in cases where taking difference between values
-        :param target_column_name: str, column in metric_df that takes on different values for the entries with which
-        we find difference in values
-        :param metric_df: pandas df. Subtract values for pairs of entries for which all columns in metric_df take on
-        the same value, except for the column given by target_column_name, which takes on different values across
-        pairs of entries
-        :param pairs_order: desired order of values in target_column_name for subtraction
-        (e.g. mPFC_targeted - OFC_targeted for the column brain_region)
-        :param vals_index_name: str
-        :param boot_set_name: str, name of bootstrap parameter set
-        :param eps_labels_resample_col_name: str, name of eps_labels column for resampling
-        :param exclude_columns: list, names of columns to exclude when getting paired metric df (values at these
-        columns are allowed to differ across members of pair)
-        :return: df with metric
-        :return resample_levels: resample_levels_ in function hierarchical_bootstrap in hierarchical_bootstrap.py
-        :return ave_group_column_names: ave_group_column_names_ in function hierarchical_bootstrap in
-        hierarchical_bootstrap.py
-        """
-
-        # Define inputs if not passed
-        if exclude_columns is None:
-            exclude_columns = []
-
-        # Define parameters for bootstrap
-        # ...Define columns at which to resample during bootstrap, in order
-        eps_labels_list = []
-        if eps_labels_resample_col_name not in exclude_columns and eps_labels_resample_col_name is not None:
-            eps_labels_list = [eps_labels_resample_col_name]
-        resample_levels = [
-            "nwb_file_name_epochs_description"] + eps_labels_list + ["brain_region_units_param_name"]
-        # ...Define columns whose values to keep constant (no resampling across these)
-        col_name = unpack_single_element(
-            [x for x in ["relationship", "joint_relationship", "brain_region"] if x != target_column_name and
-             x in metric_df.columns])
-        ave_group_column_names = [
-            vals_index_name, "x_val", self._get_joint_column_name(target_column_name), f"{target_column_name}_1",
-            f"{target_column_name}_2"] + [col_name]
-        # ...Alter params based on whether rat cohort
-        resample_levels, ave_group_column_names = self._alter_boot_params_rat_cohort(
-            boot_set_name, resample_levels, ave_group_column_names)
-
-        # Redefine metric_df to reflect difference between val for pair of conditions
-        # ...Define pairs of variable
-        target_column_pairs = get_val_pairs(np.unique(metric_df[target_column_name]), pairs_order)
-        # ...Define function for computing metric on brain region pairs
-        metric_pair_fn = self.metric_pair_diff
-        # ...Get df with paired metric
-        metric_df = self.get_paired_metric_df(metric_df, target_column_name, target_column_pairs, metric_pair_fn,
-                                              exclude_columns=exclude_columns)
-
-        if debug_mode and len(metric_df) == 0:
-            raise Exception
-
-        # Return parameters
-        return metric_df, resample_levels, ave_group_column_names
-
     def cleanup(self):
         # Delete orphaned part table entries (not sure why orphaned entries are able to be made)
 
@@ -2883,8 +2907,8 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
 
     def _get_relationship_meta_name(self):
 
-        boot_set_name = self.get_upstream_param("boot_set_name")
-        params_table = self._get_params_table()
+        params_table = self._get_params_table()()
+        boot_set_name = (params_table & self.fetch1("KEY")).get_params()["boot_set_name"]
         if boot_set_name in params_table._valid_relationship_div_boot_set_names() + \
             params_table._valid_stay_leave_diff_boot_set_names() + \
             params_table._valid_stay_leave_diff_brain_region_diff_boot_set_names() + \
@@ -3251,6 +3275,8 @@ def format_metric_name(metric_name):
     return metric_name_map[metric_name]
 
 
+# TODO: if delete all tables relying on PopulationAnalysisParamsBase, convert summ param tables to have
+#  diciontary with params, rather than classic params table setup
 class PopulationAnalysisParamsBase(SecKeyParamsBase):
 
     @staticmethod
@@ -3307,9 +3333,11 @@ class PopulationAnalysisParamsBase(SecKeyParamsBase):
         # Boot set names to populate table with. Use different set depending on child class.
         return self._valid_default_boot_set_names()
 
+    def get_params(self):
+        raise Exception(f"Must be overwritten in child class")
+
     def get_boot_params(self):
-        boot_set_name = self.fetch1("boot_set_name")
-        return get_boot_params(boot_set_name)
+        return get_boot_params(self.get_params()["boot_set_name"])
 
 
 class CovariateFRVecAveSummParamsBase(PopulationAnalysisParamsBase):
@@ -3331,6 +3359,9 @@ class CovariateFRVecAveSummParamsBase(PopulationAnalysisParamsBase):
         # Combine each default processing param with each default BrainRegionUnitsCohortType param
         return [x + [y] for x in self._default_processing_params() for y in
                 self._default_brain_region_units_cohort_types()]
+
+    def get_params(self):
+        return {k: self.fetch1(k) for k in get_table_secondary_key_names(self)}
 
 
 class PopulationAnalysisSelBase(SelBase):

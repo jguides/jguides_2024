@@ -329,9 +329,9 @@ class ComputedBase(dj.Computed):
 
         return params_table
 
-    def get_upstream_param(self, column_name):
+    def get_upstream_param(self, param_name):
         params_table = self._get_params_table()()
-        return (params_table & self.fetch1("KEY")).fetch1(column_name)
+        return (params_table & self.fetch1("KEY")).get_params()[param_name]
 
     # More interpretable as method than as attribute since not all computed tables have params table
     def meta_param_name(self):
