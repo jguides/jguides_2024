@@ -36,6 +36,7 @@ def _get_table(table_name):
    from src.jguides_2024.glm.jguidera_basis_function import RaisedCosineBasisParams, RaisedCosineBasis
    from src.jguides_2024.glm.jguidera_el_net import ElNetParams, ElNetSel, ElNet
    from src.jguides_2024.glm.jguidera_measurements_interp_pool import InterceptSel, Intercept, XInterpPoolSel, XInterpPool, XInterpPoolCohortParamName, XInterpPoolCohortParams, XInterpPoolCohort, XInterpPoolCohortEpsCohortParams, XInterpPoolCohortEpsCohort
+   from src.jguides_2024.firing_rate_vector.jguidera_well_event_firing_rate_vector_decode import DecodeTimeRelWAFRVecParams, DecodeTimeRelWAFRVecSel, DecodeTimeRelWAFRVec, DecodeTimeRelWAFRVecSummParams, DecodeTimeRelWAFRVecSummSel, DecodeTimeRelWAFRVecSumm
    from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_difference_vector_similarity import FRDiffVecCosSimSel, FRDiffVecCosSim
    from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector_euclidean_distance import FRVecEucDistSel, FRVecEucDist
    from src.jguides_2024.firing_rate_vector.jguidera_path_firing_rate_vector import PathFRVecParams, PathFRVecSel, PathFRVec, PathFRVecSTAveParams, PathFRVecSTAveSel, PathFRVecSTAve, PathAveFRVecParams, PathAveFRVecSel, PathAveFRVec, PathFRVecSTAveSummParams, PathFRVecSTAveSummSel, PathFRVecSTAveSumm, PathAveFRVecSummParams, PathAveFRVecSummSel, PathAveFRVecSumm

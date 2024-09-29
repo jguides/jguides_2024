@@ -260,6 +260,15 @@ class SelBase(dj.Manual):
         for key in bad_entries:
             self.delete_(key, safemode)
 
+    def get_object_id_name(self, leave_out_object_id=False, unpack_single_object_id=True):
+        return get_table_object_id_name(self, leave_out_object_id, unpack_single_object_id)
+
+    def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name=None):
+        return fetch1_dataframe(self, object_id_name, restore_empty_nwb_object, df_index_name)
+
+    def fetch_nwb(self):
+        return fetch_nwb(self)
+
 
 class PartBase(dj.Part):
 

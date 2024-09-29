@@ -1841,6 +1841,7 @@ class PathWellPopSummBase(ComputedBase):
             "same_path_leave_leave_trials",
             "same_path_incorrect_incorrect_trials",
             "same_path_incorrect_incorrect_stay_trials",
+            "inbound_correct_correct_stay_trials",
             "outbound_correct_correct_trials",
             "outbound_correct_correct_stay_trials"
             "outbound_correct_incorrect_stay_trials",

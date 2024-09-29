@@ -10,142 +10,139 @@ import spyglass as nd
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
-    CovariateFRVecAveSelBase, PopulationAnalysisParamsBase, PopulationAnalysisSelBase, PathWellFRVecSummBase
+    PopulationAnalysisSelBase, PathWellFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, insert_analysis_table_entry, \
-    insert1_print
+    insert1_print, get_table_secondary_key_names
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_nwb_file_name_epochs_description
-from src.jguides_2024.firing_rate_vector.jguidera_path_firing_rate_vector import PathFRVec, PathFRVecParams
+from src.jguides_2024.firing_rate_vector.jguidera_well_event_firing_rate_vector import TimeRelWAFRVec, \
+    TimeRelWAFRVecParams
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionCohort, CurationSet
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RecordingSet
 from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
-from src.jguides_2024.position_and_maze.jguidera_ppt import PptParams
 from src.jguides_2024.position_and_maze.jguidera_ppt_interp import PptDigParams
 from src.jguides_2024.spikes.jguidera_res_spikes import ResEpochSpikesSmParams
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, BrainRegionUnitsCohortType
+from src.jguides_2024.time_and_trials.jguidera_time_relative_to_well_event import TimeRelWADigParams, \
+    TimeRelWADigSingleAxisParams
 from src.jguides_2024.utils.df_helpers import df_filter_columns, df_from_data_list, df_pop
 from src.jguides_2024.utils.hierarchical_bootstrap import hierarchical_bootstrap
 from src.jguides_2024.utils.plot_helpers import format_ax, get_fig_axes
 from src.jguides_2024.utils.save_load_helpers import pickle_file, unpickle_file
 from src.jguides_2024.utils.vector_helpers import unpack_single_vector, unpack_single_element
 
-schema = dj.schema("jguidera_path_firing_rate_vector_decode")
+schema = dj.schema("jguidera_well_event_firing_rate_vector_decode")
 
 
 # These imports are called with eval or used in table definitions (do not remove):
 EpochsDescription
-PptParams
-PptDigParams
+TimeRelWADigParams
+TimeRelWADigSingleAxisParams
 BrainRegionUnits
 ResEpochSpikesSmParams
-PathFRVec
+TimeRelWAFRVec
 nd
 BrainRegionUnitsCohortType
-PathFRVecParams
+TimeRelWAFRVecParams
 BrainRegionCohort
 CurationSet
 
 
-@schema
-class DecodePathFRVecParams(SecKeyParamsBase):
-# class DecodePathFRVecParams(dj.Manual):  # use when initially generating table; if not cannot update table later
-    definition = """
-    # Parameters for DecodePathFRVec
-    decode_path_fr_vec_param_name : varchar(100)
-    ---
-    decode_path_fr_vec_params : blob
-    """
+class DecodeCovFRVecParamsBase(SecKeyParamsBase):
+
+    def get_params(self):
+        return self.fetch1(unpack_single_element(get_table_secondary_key_names(self)))
 
     def get_valid_bin_nums(self):
-        return (PptDigParams & self.fetch1("KEY")).get_valid_bin_nums()
+        raise Exception(f"Must overwrite in child class")
+
+
+@schema
+class DecodeTimeRelWAFRVecParams(dj.Manual):  # use when initially generating table; if not cannot update table later
+# class DecodeTimeRelWAFRVecParams(DecodeCovFRVecParamsBase):
+    definition = """
+    # Parameters for DecodeTimeRelWAFRVec
+    decode_time_rel_wa_fr_vec_param_name : varchar(100)
+    ---
+    decode_time_rel_wa_fr_vec_params : blob
+    """
+
+    def get_params(self):
+        return self.fetch1(unpack_single_element(get_table_secondary_key_names(self)))
+
+    def get_valid_bin_nums(self):
+        return (TimeRelWADigParams & self.fetch1("KEY")).get_valid_bin_nums()
 
     def insert_defaults(self, **kwargs):
 
-        # Decode path progression on correct trials where rat stayed for full delay period at destination well
-        decode_path_fr_vec_param_name = "LDA_path_progression_loocv_correct_stay_trials"
-        decode_path_fr_vec_params = {
-            "classifier_name": "linear_discriminant_analysis", "decode_var": "path_progression",
-            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
+        # Decode time in delay on correct trials where rat stayed for full delay period
+        decode_time_rel_wa_fr_vec_param_name = "LDA_time_in_delay_loocv_correct_stay_trials"
+        decode_time_rel_wa_fr_vec_params = {
+            "classifier_name": "linear_discriminant_analysis", "decode_var": "time_in_delay",
+            "time_rel_wa_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
         self.insert1(
-            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
-             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+            {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+             "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
 
         # Decode correct vs. incorrect on trials where rat stayed for full delay period at destination well
-        decode_path_fr_vec_param_name = "LDA_correct_incorrect_loocv_stay_trials"
-        decode_path_fr_vec_params = {
+        decode_time_rel_wa_fr_vec_param_name = "LDA_correct_incorrect_loocv_stay_trials"
+        decode_time_rel_wa_fr_vec_params = {
             "classifier_name": "linear_discriminant_analysis", "decode_var": "LDA_correct_incorrect",
-            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
+            "time_rel_wa_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
         self.insert1(
-            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
-             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
-
-
-class DecodePathFRVecSelBase(CovariateFRVecAveSelBase):
-
-    @staticmethod
-    def _fr_vec_table():
-        return PathFRVec
+            {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+             "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
 
 
 @schema
-class DecodePathFRVecSel(DecodePathFRVecSelBase):
-# class DecodePathFRVecSel(dj.Manual):  # use when initially generating table; if not cannot update table later
+class DecodeTimeRelWAFRVecSel(dj.Manual):  # use when initially generating table; if not cannot update table later
+# class DecodeTimeRelWAFRVecSel(CovariateFRVecAveSelBase):
 
     definition = """
-    # Selection from upstream tables for DecodePathFRVec 
+    # Selection from upstream tables for DecodeTimeRelWAFRVec 
     -> EpochsDescription
     res_time_bins_pool_param_name : varchar(1000)
     -> PptParams
     -> PptDigParams
     -> BrainRegionUnits
     -> ResEpochSpikesSmParams
-    -> DecodePathFRVecParams
+    -> DecodeTimeRelWAFRVecParams
     zscore_fr : bool
-    path_fr_vec_param_name : varchar(40)
+    time_rel_wa_fr_vec_param_name : varchar(40)
     """
 
-    # Override parent class method to further restrict potentials keys and limit path_fr_vec_param_name
-    # to those defined in params for a given decode_path_fr_vec_param_name
-
+    # Override parent class method to further restrict potentials keys and limit time_rel_wa_fr_vec_param_name
+    # to those defined in params for a given decode_time_rel_wa_fr_vec_param_name
     def _get_potential_keys(self, key_filter=None, populate_tables=False):
 
-        key_filter = {"ppt_dig_param_name": "0.0625", "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0}
+        key_filter = {
+            "ppt_dig_param_name": TimeRelWADigParams().lookup_param_name([.25]),
+            "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0}
 
         potential_keys = []
-        for param_name, params in DecodePathFRVecParams().fetch():
-            key_filter.update({"decode_path_fr_vec_param_name": param_name,
-                          "path_fr_vec_param_name": params["path_fr_vec_param_name"]})
+        for param_name, params in DecodeTimeRelWAFRVecParams().fetch():
+            key_filter.update({"decode_time_rel_wa_fr_vec_param_name": param_name,
+                          "time_rel_wa_fr_vec_param_name": params["time_rel_wa_fr_vec_param_name"]})
             potential_keys += super()._get_potential_keys(key_filter, populate_tables)
 
         return potential_keys
 
+    @staticmethod
+    def _fr_vec_table():
+        return TimeRelWAFRVec
+
     def delete_(self, key, safemode=True):
-        delete_(self, [DecodePathFRVec], key, safemode)
+        delete_(self, [DecodeTimeRelWAFRVec], key, safemode)
 
     def _get_cov_fr_vec_param_names(self):
         return ["correct_incorrect_stay_trials"]
 
 
-@schema
-class DecodePathFRVec(ComputedBase):
-    definition = """
-    # Decode covariate along paths
-    -> DecodePathFRVecSel
-    ---
-    -> nd.common.AnalysisNwbfile
-    metric_df_object_id : varchar(40)
-    """
-
-    class Upstream(dj.Part):
-        definition = """
-        # Achieves dependence on upstream tables 
-        -> DecodePathFRVec
-        -> PathFRVec
-        """
+class DecodeCovFRVecBase(ComputedBase):
 
     @staticmethod
     def _fr_vec_table():
-        return PathFRVec
+        raise Exception(f"Must overwrite in child class")
 
     def delete_(self, key, safemode=True):
         delete_(self, [], key, safemode)
@@ -197,15 +194,17 @@ class DecodePathFRVec(ComputedBase):
         # Separate function for this to be able to easily check make function computations outside of populate
 
         # Get params
-        decode_cov_fr_vec_params = (self._get_params_table() & key).fetch1("decode_path_fr_vec_params")
-        cov_fr_vec_param_name = decode_cov_fr_vec_params["path_fr_vec_param_name"]
+        params_table = self._get_params_table()
+        decode_cov_fr_vec_params = (params_table & key).get_params()
+        cov_fr_vec_meta_param_name = self._fr_vec_table()()._get_params_table()().meta_param_name()
+        cov_fr_vec_param_name = decode_cov_fr_vec_params[cov_fr_vec_meta_param_name]
         decode_var = decode_cov_fr_vec_params["decode_var"]
         cross_validation_method = decode_cov_fr_vec_params["cross_validation_method"]
 
         # Define condition comparisons based on param name
         valid_names = None
         if cov_fr_vec_param_name == "correct_incorrect_stay_trials":
-            if decode_var == "path_progression":
+            if decode_var in ["path_progression", "time_in_delay"]:
                 valid_names = [
                     "same_path_correct_correct_stay_trials", "same_turn_correct_correct_stay_trials",
                     "inbound_correct_correct_stay_trials", "outbound_correct_correct_stay_trials",
@@ -230,7 +229,7 @@ class DecodePathFRVec(ComputedBase):
                 include_reversed_pairs=include_reversed_pairs))
 
         # Get valid bin numbers
-        valid_bin_nums = (PptDigParams & key).get_valid_bin_nums()
+        valid_bin_nums = params_table().get_valid_bin_nums()
 
         # Get firing rate vectors and covariate
         vector_df_name = "vector_df"
@@ -424,7 +423,6 @@ class DecodePathFRVec(ComputedBase):
         data_list = []
         for label_pair_name in label_pair_names:
             df_subset = df_filter_columns(df, {"label_pair_name": label_pair_name})
-            cmat_classes = unpack_single_vector(df_subset.confusion_matrix_classes.values)
             confusion_matrix_ave = np.mean(np.stack(df_subset.confusion_matrix), axis=0)
 
             # Store
@@ -505,9 +503,12 @@ class DecodePathFRVec(ComputedBase):
 
         df = df_from_data_list(data_list, keep_df_columns + ["val"])
 
-        decode_path_fr_vec_param_name = self.fetch1("decode_path_fr_vec_param_name")
+        meta_param_name = self._get_params_table()().meta_param_name()
 
-        if decode_path_fr_vec_param_name == "LDA_path_progression_loocv_correct_stay_trials":
+        param_name = self.fetch1(meta_param_name)
+
+        if param_name in [
+            "LDA_path_progression_loocv_correct_stay_trials", "LDA_time_in_delay_loocv_correct_stay_trials"]:
 
             # Flatten df so that each x has its own row
             keep_df_columns = [x for x in df.columns if x not in ["confusion_matrix_classes", "val"]]
@@ -520,7 +521,8 @@ class DecodePathFRVec(ComputedBase):
             df = df_from_data_list(data_list, keep_df_columns + ["x", "val"])
 
         else:
-            raise Exception(f"decode_path_fr_vec_param_name {decode_path_fr_vec_param_name} not accounted for")
+            raise Exception(
+                f"{meta_param_name} {param_name} not accounted for")
 
         return df
 
@@ -589,7 +591,30 @@ class DecodePathFRVec(ComputedBase):
         os.remove(file_path)
 
 
-    # This function must be defined in module and not be a method of a class in order for it to work
+@schema
+class DecodeTimeRelWAFRVec(ComputedBase):  # use when initially generating table; if not cannot update table later
+# class DecodeTimeRelWAFRVec(DecodeCovFRVecBase):
+    definition = """
+    # Decode covariate in delay period bins
+    -> DecodeTimeRelWAFRVecSel
+    ---
+    -> nd.common.AnalysisNwbfile
+    metric_df_object_id : varchar(40)
+    """
+
+    class Upstream(dj.Part):
+        definition = """
+        # Achieves dependence on upstream tables 
+        -> DecodeTimeRelWAFRVec
+        -> TimeRelWAFRVec
+        """
+
+    @staticmethod
+    def _fr_vec_table():
+        return TimeRelWAFRVec
+
+
+# This function must be defined in module and not be a method of a class in order for it to work
 def _get_dfs(key):
     # Get data for this table entry
     df = (table & key).fetch1_performance_df(drop_column_names=None)
@@ -629,28 +654,28 @@ def get_eps_labels(epoch_1, epoch_2, label_1, label_2):
 
 
 """
-Notes on DecodePathFRVecSumm table setup:
-- We want to combine entries across DecodePathFRVec, across nwb_file_names, epochs_description, 
-and brain_region. For this reason, we want DecodePathFRVecSummSel to have all primary keys of DecodePathFRVec
+Notes on DecodeTimeRelWAFRVecSumm table setup:
+- We want to combine entries across DecodeTimeRelWAFRVec, across nwb_file_names, epochs_description, 
+and brain_region. For this reason, we want DecodeTimeRelWAFRVecSummSel to have all primary keys of DecodeTimeRelWAFRVec
 except for nwb_file_name, epochs_description, brain_region, brain_region_units_param_name, and 
 curation_name. 
   To specify the nwb_file_names and corresponding epochs_descriptions we want to combine across, we use recording_set.
   To specify the brain regions we want to combine across, we use brain_region_cohort. 
   To specify curation_name, we use curation_set_name.
   To specify brain region unit information, we use BrainRegionUnitsCohortType
-- We include BrainRegionUnitsCohortType in DecodePathFRVecSummParams so that we can stay within the
+- We include BrainRegionUnitsCohortType in DecodeTimeRelWAFRVecSummParams so that we can stay within the
 limit on number of primary keys
 """
 
 
 @schema
-class DecodePathFRVecSummParams(PopulationAnalysisParamsBase):
-# class DecodePathFRVecSummParams(dj.Manual):  # use when initially generating table; if not cannot update table later
+class DecodeTimeRelWAFRVecSummParams(dj.Manual):  # use when initially generating table; if not cannot update table later
+# class DecodeTimeRelWAFRVecSummParams(PopulationAnalysisParamsBase):
     definition = """
-    # Parameters for DecodePathFRVecSumm
-    decode_path_fr_vec_summ_param_name : varchar(200)
+    # Parameters for DecodeTimeRelWAFRVecSumm
+    decode_time_rel_wa_fr_vec_summ_param_name : varchar(200)
     ---
-    decode_path_fr_vec_summ_params : blob
+    decode_time_rel_wa_fr_vec_summ_params : blob
     """
 
     # Had to shorten name to comply with mysql requirements
@@ -658,7 +683,7 @@ class DecodePathFRVecSummParams(PopulationAnalysisParamsBase):
         definition = """
         # Achieves dependence on BrainRegionUnitsCohortType
         -> BrainRegionUnitsCohortType
-        -> DecodePathFRVecSummParams
+        -> DecodeTimeRelWAFRVecSummParams
         """
 
     def insert_defaults(self, **kwargs):
@@ -675,35 +700,35 @@ class DecodePathFRVecSummParams(PopulationAnalysisParamsBase):
 
                 param_name = f"{boot_set_name}^{brain_region_units_cohort_type}"
 
-                decode_path_fr_vec_summ_params = {
+                decode_time_rel_wa_fr_vec_summ_params = {
                     "boot_set_name": boot_set_name, "brain_region_units_cohort_type": brain_region_units_cohort_type}
 
                 # Insert into table
-                self.insert1({"decode_path_fr_vec_summ_param_name": param_name,
-                              "decode_path_fr_vec_summ_params": decode_path_fr_vec_summ_params}, skip_duplicates=True)
+                self.insert1({"decode_time_rel_wa_fr_vec_summ_param_name": param_name,
+                              "decode_time_rel_wa_fr_vec_summ_params": decode_time_rel_wa_fr_vec_summ_params}, skip_duplicates=True)
 
     def _boot_set_names(self):
         return super()._boot_set_names() + self._valid_brain_region_diff_boot_set_names()
 
     def get_params(self):
-        return self.fetch1("decode_path_fr_vec_summ_params")
+        return self.fetch1("decode_time_rel_wa_fr_vec_summ_params")
 
 
 @schema
-class DecodePathFRVecSummSel(PopulationAnalysisSelBase):
+class DecodeTimeRelWAFRVecSummSel(PopulationAnalysisSelBase):
     definition = """
-    # Selection from upstream tables for DecodePathFRVecSumm
+    # Selection from upstream tables for DecodeTimeRelWAFRVecSumm
     -> RecordingSet
     res_time_bins_pool_param_name : varchar(1000)
-    -> PptParams
-    -> PptDigParams
+    -> TimeRelWADigParams
+    -> TimeRelWADigSingleAxisParams
     brain_region_cohort_name : varchar(40)
     curation_set_name : varchar(40)
     -> ResEpochSpikesSmParams
-    -> DecodePathFRVecParams
+    -> DecodeTimeRelWAFRVecParams
     zscore_fr : bool
-    -> PathFRVecParams
-    -> DecodePathFRVecSummParams
+    -> TimeRelWAFRVecParams
+    -> DecodeTimeRelWAFRVecSummParams
     ---
     upstream_keys : mediumblob
     -> nd.common.AnalysisNwbfile
@@ -713,10 +738,10 @@ class DecodePathFRVecSummSel(PopulationAnalysisSelBase):
     class Upstream(dj.Part):
         definition = """
         # Achieves dependence on upstream tables
-        -> DecodePathFRVecSummSel
+        -> DecodeTimeRelWAFRVecSummSel
         -> BrainRegionCohort
         -> CurationSet
-        -> DecodePathFRVec
+        -> DecodeTimeRelWAFRVec
         """
 
     def _get_param_name_map(self, key_filter, brain_region_units_cohort_types):
@@ -795,11 +820,11 @@ class DecodePathFRVecSummSel(PopulationAnalysisSelBase):
 
 
 @schema
-class DecodePathFRVecSumm(PathWellFRVecSummBase):
-# class DecodePathFRVecSumm(dj.Computed):  # use to initialize table
+class DecodeTimeRelWAFRVecSumm(PathWellFRVecSummBase):
+# class DecodeTimeRelWAFRVecSumm(dj.Computed):  # use to initialize table
     definition = """
-    # Summary of decodes of covariate along paths
-    -> DecodePathFRVecSummSel
+    # Summary of decodes of covariate in delay period bins
+    -> DecodeTimeRelWAFRVecSummSel
     ---
     -> nd.common.AnalysisNwbfile
     metric_df_object_id : varchar(40)
@@ -809,11 +834,11 @@ class DecodePathFRVecSumm(PathWellFRVecSummBase):
 
     @staticmethod
     def _upstream_table():
-        return DecodePathFRVec
+        return DecodeTimeRelWAFRVec
 
     def make(self, key):
 
-        df_concat = (DecodePathFRVecSummSel & key).fetch1_dataframe()
+        df_concat = (DecodeTimeRelWAFRVecSummSel & key).fetch1_dataframe()
 
         # Drop columns
         drop_columns = [
@@ -837,7 +862,8 @@ class DecodePathFRVecSumm(PathWellFRVecSummBase):
         # average values
         if boot_set_name in ["default", "default_rat_cohort"]:
             # ...Define columns at which to resample during bootstrap, in order
-            resample_levels = ["nwb_file_name_epochs_description", "original_eps_labels", "brain_region_units_param_name"]
+            resample_levels = [
+                "nwb_file_name_epochs_description", "original_eps_labels", "brain_region_units_param_name"]
             # ...Define columns whose values to keep constant (no resampling across these)
             ave_group_column_names = ["x_val", "brain_region", "relationship"]
             # ...Alter params based on whether rat cohort
@@ -918,7 +944,7 @@ class DecodePathFRVecSumm(PathWellFRVecSummBase):
         return [0, 1]
 
     def _get_x_text(self):
-        return "Path fraction"
+        return "Time in delay (s)"
 
     def _get_val_text(self):
         return "Decode performance"

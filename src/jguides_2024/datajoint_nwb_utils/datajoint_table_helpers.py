@@ -400,7 +400,7 @@ def create_analysis_nwbf(key, nwb_objects, nwb_object_names):
 
 
 def insert_analysis_table_entry(table, nwb_objects, key, nwb_object_names=None, convert_empty_nwb_object=True,
-                                reset_index=False, replace_none_col_names=None):
+                                reset_index=False, replace_none_col_names=None, skip_insertion=False):
 
     # Reset index in any dfs in nwb_objects if indicated (useful because currently index does not get stored
     # in analysis nwb file). Default is not True because if reset index when there is none, adds column called "index"
@@ -422,10 +422,15 @@ def insert_analysis_table_entry(table, nwb_objects, key, nwb_object_names=None, 
     if convert_empty_nwb_object:
         nwb_objects = [handle_empty_nwb_object(x, from_empty=True) for x in nwb_objects]
 
-    # Insert into table
+    # Create analysis nwbf
     key = create_analysis_nwbf(key=key, nwb_objects=nwb_objects, nwb_object_names=nwb_object_names)
-    table.insert1(key, skip_duplicates=True)  # insert into table
+
+    # Insert into table if indicated, otherwise return key (e.g. so can insert using super)
+    if skip_insertion:
+        return key
+    table.insert1(key, skip_duplicates=True)
     print(f'Populated {table.table_name} for {key}')
+
 
 
 def check_nwb_file_inserted(nwb_file_name):
