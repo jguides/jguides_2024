@@ -8,7 +8,7 @@ import spyglass as nd
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     CovariateFRVecBase, CovariateFRVecSTAveParamsBase, \
     CovariateFRVecAveSelBase, CovariateFRVecTrialAveBase, CovariateFRVecSTAveBase, CovariateFRVecSelBase, \
-    CovariateFRVecAveSummSelBase, CovariateFRVecAveSummParamsBase, \
+    CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
     CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, TimeRelWAFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
@@ -135,7 +135,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds_2]
         primary_time_rel_wa_dig_single_axis_param_names_2 = [
                 TimeRelWADigSingleAxisParams().lookup_param_name(x)
-                for x in [[-1, 3]]]  # make all combinations with each of these
+                for x in [[0, 2], [-1, 3]]]  # make all combinations with each of these
 
         # Restrict above params if outside params passed
         if "time_rel_wa_fr_vec_param_name" in key_filter:
@@ -468,6 +468,17 @@ class TimeRelWAFRVec(CovariateFRVecBase):
 
         return TimeRelWADigSingleAxisParams().get_bin_centers(key)
 
+    def get_valid_covariate_bin_nums(self, key):
+        # Important to pass full key because bins depend on file in this case
+        return TimeRelWADigSingleAxisParams().get_valid_bin_nums(key)
+
+    def get_bin_centers_map(self):
+        key = self.fetch1("KEY")
+        x = TimeRelWADigSingleAxisParams().get_valid_bin_nums(key)
+        bin_centers = (self & key).get_bin_centers()
+
+        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
+
     def delete_(self, key=None, safemode=True):
         # Delete downstream entries first
         delete_(self, [TimeRelWAFRVecSTAveSel, TimeRelWAAveFRVecSel], key, safemode)
@@ -532,18 +543,6 @@ class TimeRelWAFRVecSTAveSel(TimeRelWAFRVecAveSelBase):
 
 # Overrides methods in CovariateFRVecAveBase in a manner specific to time relative to well arrival covariate
 class TimeRelWAFRVecAveBase:
-
-    @staticmethod
-    def get_valid_covariate_bin_nums(key):
-        # Important to pass full key because bins depend on file in this case
-        return TimeRelWADigSingleAxisParams().get_valid_bin_nums(key)
-
-    def get_bin_centers_map(self):
-        key = self.fetch1("KEY")
-        x = TimeRelWADigSingleAxisParams().get_valid_bin_nums(key)
-        bin_centers = (self._fr_vec_table() & key).get_bin_centers()
-
-        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
 
     @staticmethod
     def _fr_vec_table():
@@ -656,7 +655,7 @@ limit on number of primary keys
 
 
 @schema
-class TimeRelWAFRVecSTAveSummParams(CovariateFRVecAveSummParamsBase):
+class TimeRelWAFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for TimeRelWAFRVecSTAveSumm
     time_rel_wa_fr_vec_st_ave_summ_param_name : varchar(200)
@@ -760,7 +759,7 @@ Notes on TimeRelWAAveFRVecSumm table setup: same reasoning as for TimeRelWAFRVec
 
 
 @schema
-class TimeRelWAAveFRVecSummParams(CovariateFRVecAveSummParamsBase):
+class TimeRelWAAveFRVecSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for TimeRelWAAveFRVecSumm
     time_rel_wa_ave_fr_vec_summ_param_name : varchar(160)

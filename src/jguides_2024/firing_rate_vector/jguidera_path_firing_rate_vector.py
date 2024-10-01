@@ -8,7 +8,7 @@ import spyglass as nd
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     CovariateFRVecSTAveParamsBase, \
     CovariateFRVecAveSelBase, CovariateFRVecTrialAveBase, CovariateFRVecSTAveBase, CovariateFRVecBase, \
-    CovariateFRVecSelBase, CovariateFRVecAveSummSelBase, CovariateFRVecAveSummParamsBase, \
+    CovariateFRVecSelBase, CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
     CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, PathFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
@@ -350,6 +350,15 @@ class PathFRVec(CovariateFRVecBase):
     def get_bin_centers(self):
         return (PptDigParams & self.fetch1("KEY")).get_bin_centers()
 
+    def get_valid_covariate_bin_nums(self, key):
+        return (PptDigParams & key).get_valid_bin_nums()
+
+    def get_bin_centers_map(self):
+        key = self.fetch1("KEY")
+        x = (PptDigParams & key).get_valid_bin_nums()
+        bin_centers = (self & key).get_bin_centers()
+        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
+
     def delete_(self, key, safemode=True):
         delete_(self, [PathAveFRVecSel, PathFRVecSTAveSel], key, safemode)
 
@@ -402,16 +411,6 @@ class PathFRVecSTAveSel(PathFRVecAveSelBase):
 # Overrides methods in CovariateFRVecAveBase in a manner specific to path covariate and invariant to trial averaged
 # vs. single trial table
 class PathFRVecAveBase:
-
-    @staticmethod
-    def get_valid_covariate_bin_nums(key):
-        return (PptDigParams & key).get_valid_bin_nums()
-
-    def get_bin_centers_map(self):
-        key = self.fetch1("KEY")
-        x = (PptDigParams & key).get_valid_bin_nums()
-        bin_centers = (self._fr_vec_table() & key).get_bin_centers()
-        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
 
     @staticmethod
     def _fr_vec_table():
@@ -526,7 +525,7 @@ limit on number of primary keys
 
 
 @schema
-class PathFRVecSTAveSummParams(CovariateFRVecAveSummParamsBase):
+class PathFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for PathFRVecSTAveSumm
     path_fr_vec_st_ave_summ_param_name : varchar(200)
@@ -632,7 +631,7 @@ Notes on PathAveFRVecSumm table setup: same reasoning as for PathFRVecSTAveSumm 
 
 
 @schema
-class PathAveFRVecSummParams(CovariateFRVecAveSummParamsBase):
+class PathAveFRVecSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for PathAveFRVecSumm
     path_ave_fr_vec_summ_param_name : varchar(160)

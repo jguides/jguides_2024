@@ -9,7 +9,7 @@ import spyglass as nd
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     CovariateFRVecSelBase, CovariateFRVecBase, CovariateFRVecTrialAveBase, CovariateAveFRVecParamsBase, \
     CovariateFRVecAveSelBase, CovariateFRVecSTAveBase, CovariateFRVecSTAveParamsBase, CovariateFRVecSTAveSummBase, \
-    CovariateFRVecAveSummSelBase, CovariateFRVecAveSummParamsBase, MultiCovFRVecSummBase, CovariateAveFRVecSummBase
+    CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, MultiCovFRVecSummBase, CovariateAveFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import drop_, delete_
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
@@ -389,6 +389,17 @@ class MultiCovFRVec(CovariateFRVecBase):
 
         return bin_centers_across_tables
 
+    def get_valid_covariate_bin_nums(self, key):
+        # Important to pass full key because bins depend on file in this case
+        table_old_new_bin_nums_map = (self & key).fetch1("table_old_new_bin_nums_map")
+        return np.concatenate([list(x.values()) for x in table_old_new_bin_nums_map.values()])
+
+    def get_bin_centers_map(self):
+        key = self.fetch1("KEY")
+        x = self.get_valid_covariate_bin_nums(key)
+        bin_centers = (self & key).get_bin_centers()
+        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
+
     def drop_(self):
         drop_([MultiCovAveFRVecSel(), MultiCovFRVecSTAveSel, self])
 
@@ -405,18 +416,6 @@ class MultiCovFRVecAveSelBase(CovariateFRVecAveSelBase):
 
 # Overrides methods in CovariateFRVecAveBase in a manner specific to multiple covariate case
 class MultiCovFRVecAveBase:
-
-    @staticmethod
-    def get_valid_covariate_bin_nums(key):
-        # Important to pass full key because bins depend on file in this case
-        table_old_new_bin_nums_map = (MultiCovFRVec & key).fetch1("table_old_new_bin_nums_map")
-        return np.concatenate([list(x.values()) for x in table_old_new_bin_nums_map.values()])
-
-    def get_bin_centers_map(self):
-        key = self.fetch1("KEY")
-        x = self.get_valid_covariate_bin_nums(key)
-        bin_centers = (self._fr_vec_table() & key).get_bin_centers()
-        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
 
     @staticmethod
     def _fr_vec_table():
@@ -585,7 +584,7 @@ limit on number of primary keys
 
 
 @schema
-class MultiCovFRVecSTAveSummParams(CovariateFRVecAveSummParamsBase):
+class MultiCovFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for MultiCovFRVecSTAveSumm
     multi_cov_fr_vec_st_ave_summ_param_name : varchar(200)
@@ -691,7 +690,7 @@ Notes on MultiCovAveFRVecSumm table setup: same reasoning as for MultiCovFRVecST
 
 
 @schema
-class MultiCovAveFRVecSummParams(CovariateFRVecAveSummParamsBase):
+class MultiCovAveFRVecSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     definition = """
     # Parameters for MultiCovAveFRVecSumm
     multi_cov_ave_fr_vec_summ_param_name : varchar(160)

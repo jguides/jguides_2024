@@ -8,7 +8,7 @@ import spyglass as nd
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, get_val_pairs, \
     plot_junction_fractions
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
-    PathWellFRVecSummBase, PopulationAnalysisParamsBase, \
+    PathWellFRVecSummBase, PopulationAnalysisSecKeyParamsBase, \
     PopulationAnalysisSelBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SelBase, ParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_key_filter, make_param_name, delete_, \
@@ -667,7 +667,7 @@ limit on number of primary keys
 """
 
 
-class FRDiffVecCosSimCovNnAveSummParamsBase(PopulationAnalysisParamsBase):
+class FRDiffVecCosSimCovNnAveSummSecKeyParamsBase(PopulationAnalysisSecKeyParamsBase):
 
     def get_default_param_name(self):
         return self.lookup_param_name(self._default_params()[0])
@@ -943,7 +943,7 @@ class FRDiffVecCosSimCovNnAveSummBase(PathWellFRVecSummBase):
 
 
 @schema
-class FRDiffVecCosSimWANnAveSummParams(FRDiffVecCosSimCovNnAveSummParamsBase):
+class FRDiffVecCosSimWANnAveSummParams(FRDiffVecCosSimCovNnAveSummSecKeyParamsBase):
     definition = """
     # Parameters for FRDiffVecCosSimWANnAveSumm
     fr_diff_vec_cos_sim_wa_nn_ave_summ_param_name : varchar(200)
@@ -1047,7 +1047,7 @@ class FRDiffVecCosSimWANnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
 
 
 @schema
-class FRDiffVecCosSimPptNnAveSummParams(FRDiffVecCosSimCovNnAveSummParamsBase):
+class FRDiffVecCosSimPptNnAveSummParams(FRDiffVecCosSimCovNnAveSummSecKeyParamsBase):
     definition = """
     # Parameters for FRDiffVecCosSimPptNnAveSumm
     fr_diff_vec_cos_sim_ppt_nn_ave_summ_param_name : varchar(200)

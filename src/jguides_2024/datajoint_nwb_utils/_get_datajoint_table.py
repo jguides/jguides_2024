@@ -58,7 +58,7 @@ def _get_table(table_name):
    from src.jguides_2024.task_event.jguidera_task_event import EventNamesMapDioStatescript, PumpTimes, ContingencyEnvironmentColor
    from src.jguides_2024.task_event.jguidera_statescript_event import StatescriptEvents, ProcessedStatescriptEventsDioMismatch, ProcessedStatescriptEvents, StatescriptEventInt
    from src.jguides_2024.edeno_decoder.jguidera_edeno_decoder_helpers import StackedEdgeTrackGraph, EDPathGroups, TrackGraphSourceSortedSpikesClassifierParams
-   from src.jguides_2024.edeno_decoder.jguidera_edeno_decoder_error import EdenoDecodeErrParams, EdenoDecodeErrSel, EdenoDecodeErr, EdenoDecodeErrSummBinParams, EdenoDecodeErrSummParams, EdenoDecodeErrSummSel, EdenoDecodeErrSumm
+   from src.jguides_2024.edeno_decoder.jguidera_edeno_decoder_error import EdenoDecodeErrParams, EdenoDecodeErrSel, EdenoDecodeErr, EdenoDecodeErrSummBinParams, EdenoDecodeErrSummSecKeyParams, EdenoDecodeErrSummSel, EdenoDecodeErrSumm
    from src.jguides_2024.edeno_decoder.jguidera_edeno_decoder_run import EDDecodeVariableParams, EDCrossValidationParams, EDAlgorithmParams, EDComputeParams, EDStorageParams, EdenoDecodeParams, EdenoDecodeSel, EdenoDecode, EdenoDecodeMAPSel, EdenoDecodeMAPSel, EdenoDecodeMAP
    # Return table
    return eval(table_name)

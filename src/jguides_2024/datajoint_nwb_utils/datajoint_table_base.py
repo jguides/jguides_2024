@@ -43,9 +43,15 @@ class ParamsBase(dj.Manual):
 
         return get_meta_param_name(self, verbose=False)  # set verbose to True to print warnings
 
-    def lookup_param_name(self):
+    def lookup_param_name(self, **kwargs):
         raise Exception(f"Must be implemented in child class")
 
+    def insert1(self, key, **kwargs):
+
+        if "skip_duplicates" not in kwargs:
+            kwargs["skip_duplicates"] = True
+
+        super().insert1(key, **kwargs)
 
 class SecKeyParamsBase(ParamsBase):
 
@@ -137,13 +143,6 @@ class SecKeyParamsBase(ParamsBase):
 
     def get_default_param_name(self):
         return self.lookup_param_name(unpack_single_element(self._default_params()))
-
-    def insert1(self, key, **kwargs):
-
-        if "skip_duplicates" not in kwargs:
-            kwargs["skip_duplicates"] = True
-
-        super().insert1(key, **kwargs)
 
     def insert_entry(self, secondary_key_values, key_filter=None):
 

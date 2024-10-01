@@ -9,7 +9,8 @@ from matplotlib import pyplot as plt
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, \
     plot_junction_fractions, get_val_pairs, plot_horizontal_lines, \
     get_subject_id_shorthand, get_ordered_subject_ids
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SelBase, SecKeyParamsBase
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, SelBase, SecKeyParamsBase, \
+    ParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert_analysis_table_entry, \
     unique_table_column_sets, \
     insert1_print, get_relationship_texts, format_nwb_file_name, get_default_param, get_table_name, \
@@ -31,7 +32,7 @@ from src.jguides_2024.utils.df_helpers import df_filter_columns, dfs_same_values
     df_from_data_list, df_pop, \
     df_filter1_columns_symmetric, unique_df_column_sets
 from src.jguides_2024.utils.dict_helpers import add_defaults, dict_comprehension, check_return_single_dict, \
-    return_shared_key_value
+    return_shared_key_value, check_same_values_at_shared_keys, check_shared_key_value
 from src.jguides_2024.utils.for_loop_helpers import print_iteration_progress
 from src.jguides_2024.utils.hierarchical_bootstrap import hierarchical_bootstrap
 from src.jguides_2024.utils.list_helpers import zip_adjacent_elements, check_return_single_element
@@ -203,8 +204,13 @@ class CovariateFRVecBase(ComputedBase):
         return pd.concat(dfs, axis=0)
 
     def get_bin_centers(self):
-
         raise Exception(f"This method must be overwritten in child class")
+
+    def get_valid_covariate_bin_nums(self, key):
+        raise Exception(f"This method should be implemented in child class")
+
+    def get_bin_centers_map(self, **kwargs):
+        raise Exception(f"This method should be implemented in child class")
 
     def metric_across_epochs(self, key, metric_name, vector_type):
 
@@ -606,7 +612,16 @@ class CovariateFRVecAveSelBase(SelBase):
             epochs = (EpochsDescription & key).fetch1("epochs")
             if all([len(fr_vec_table & {**key, **{"epoch": epoch}}) == 1 for epoch in epochs]):
                 for param_key in params_table.fetch("KEY"):
+
+                    # Only continue if matching params across sources
+                    params_1 = (params_table & param_key).fetch1()
+                    params_2 = (params_table & param_key).get_params()
+                    check_same_values_at_shared_keys([params_1, params_2])
+                    if not check_same_values_at_shared_keys([key, {**params_1, **params_2}], tolerate_error=True):
+                        continue
+
                     key.update(param_key)
+
                     potential_keys.append(copy.deepcopy(key))
             else:
                 if populate_tables:
@@ -1309,20 +1324,6 @@ class CovariateFRVecAveBase(ComputedBase):
 
         return (BrainRegionColor & self.fetch1("KEY")).fetch1("color")
 
-    def _metric_index_as_bin_centers(self, metric_index, key=None):
-        # Convert metric index to bin centers units
-
-        if key is None:
-            key = dict()
-
-        # x vals varies depending on whether we are dealing with metric as a function of x, or as a function
-        # of x pair
-        bin_centers_name_map = {"x_1": "x", "x_pair_int_1": "x_pair"}
-        bin_centers_name = bin_centers_name_map[metric_index.name]
-        bin_centers_map = (self & key).get_bin_centers_map()[bin_centers_name]
-
-        return bin_centers_map.loc[metric_index]
-
     def plot_x_relationship_metric_arr(
             self, label_1, label_2, epoch_1, epoch_2, fig_ax_list=None, save_fig=False,
             plot_color_bar=True, **format_kwargs):
@@ -1384,20 +1385,29 @@ class CovariateFRVecAveBase(ComputedBase):
                 f"sm{key['res_epoch_spikes_sm_param_name']}"
             save_figure(fig, file_name_save, save_fig=save_fig)
 
+    def _metric_index_as_bin_centers(self, metric_index, key=None):
+        # Convert metric index (specific to tables of this type) to bin centers units
+
+        if key is None:
+            key = dict()
+
+        # Convert from name of x in this table (where we have metric on pairs of values), to x in covariate
+        # firing rate vector table.
+        # x vals varies depending on whether we are dealing with metric as a function of x, or as a function
+        # of x pair.
+        bin_centers_name_map = {"x_1": "x", "x_pair_int_1": "x_pair"}
+        bin_centers_name = bin_centers_name_map[metric_index.name]
+        bin_centers_map = (self & key).get_bin_centers_map()[bin_centers_name]
+
+        return bin_centers_map.loc[metric_index]
+
     @staticmethod
     def _flatten_metric_map_vals(metric_map):
         return np.hstack([np.ndarray.flatten(x.values) for x in metric_map.values()])
 
-    @staticmethod
-    def get_valid_covariate_bin_nums(key):
-        raise Exception(f"This method should be implemented in child class")
-
-    def get_bin_centers_map(self, **kwargs):
-        raise Exception(f"This method should be implemented in child class")
-
     def exclude_invalid_bins(self, df):
 
-        valid_bin_nums = self.get_valid_covariate_bin_nums(self.fetch1("KEY"))
+        valid_bin_nums = self._fr_vec_table().get_valid_covariate_bin_nums(self.fetch1("KEY"))
         valid_bool = [True] * len(df)
         for column_name in ["x_pair", "x_pair_partner_1", "x_pair_partner_2", "x_1", "x_2"]:
             if column_name in df:
@@ -1830,6 +1840,7 @@ class PathWellPopSummBase(ComputedBase):
 
             # Intermediate tint
             "same_turn", "same_turn_even_odd_trials", "same_turn_even_odd_correct_stay_trials",
+            "same_turn_correct_correct_stay_trials",
             "same_path_stay_leave_trials", "same_path_correct_incorrect_trials",
             "same_path_correct_incorrect_stay_trials",
         ], [
@@ -1837,13 +1848,14 @@ class PathWellPopSummBase(ComputedBase):
             # Lightest tint
             "different_turn_well", "different_turn_well_even_odd_trials", "different_turn_well_even_odd_stay_trials",
             "different_turn_well_even_odd_correct_stay_trials",
+            "different_turn_well_correct_correct_stay_trials",
             "different_well", "different_end_well_even_odd_stay_trials",
             "same_path_leave_leave_trials",
             "same_path_incorrect_incorrect_trials",
             "same_path_incorrect_incorrect_stay_trials",
             "inbound_correct_correct_stay_trials",
             "outbound_correct_correct_trials",
-            "outbound_correct_correct_stay_trials"
+            "outbound_correct_correct_stay_trials",
             "outbound_correct_incorrect_stay_trials",
             ]]
 
@@ -2471,6 +2483,10 @@ class PathWellPopSummBase(ComputedBase):
         plot_name = kwargs.pop("plot_type", "")
         if save_fig:
             table_subset._save_multiplot_fig(brain_region_vals, keys, plot_objs.fig, plot_name)
+
+    def _get_multiplot_params(self):
+        # Define params for plotting multiple table entries. One param set per table entry.
+        raise Exception(f"Must overwrite in child class")
 
 
 class PathWellFRVecSummBase(PathWellPopSummBase):
@@ -3276,9 +3292,7 @@ def format_metric_name(metric_name):
     return metric_name_map[metric_name]
 
 
-# TODO: if delete all tables relying on PopulationAnalysisParamsBase, convert summ param tables to have
-#  diciontary with params, rather than classic params table setup
-class PopulationAnalysisParamsBase(SecKeyParamsBase):
+class PopulationAnalysisParamsBase(ParamsBase):
 
     @staticmethod
     def _default_brain_region_units_cohort_types():
@@ -3341,7 +3355,13 @@ class PopulationAnalysisParamsBase(SecKeyParamsBase):
         return get_boot_params(self.get_params()["boot_set_name"])
 
 
-class CovariateFRVecAveSummParamsBase(PopulationAnalysisParamsBase):
+# TODO: if delete all tables relying on PopulationAnalysisSecKeyParamsBase, convert summ param tables to have
+#  diciontary with params, rather than classic params table setup
+class PopulationAnalysisSecKeyParamsBase(SecKeyParamsBase, PopulationAnalysisParamsBase):
+    pass
+
+
+class CovariateFRVecAveSummSecKeyParamsBase(PopulationAnalysisSecKeyParamsBase):
 
     @staticmethod
     def _default_label_names():

@@ -10,7 +10,7 @@ from spyglass.common import close_nwb_files
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, \
     plot_junction_fractions, get_val_pairs
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
-    PathWellPopSummBase, PopulationAnalysisParamsBase
+    PathWellPopSummBase, PopulationAnalysisSecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SelBase, SecKeyParamsBase, ComputedBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import populate_insert, \
     get_schema_table_names_from_file, insert_analysis_table_entry, \
@@ -181,7 +181,7 @@ class EdenoDecodeErrSummBinParams(dj.Manual):
 
 
 @schema
-class EdenoDecodeErrSummParams(PopulationAnalysisParamsBase):
+class EdenoDecodeErrSummSecKeyParams(PopulationAnalysisSecKeyParamsBase):
     definition = """
     # Parameters for EdenoDecodeErrSumm
     edeno_decode_err_summ_param_name : varchar(200)
@@ -215,7 +215,7 @@ class EdenoDecodeErrSummSel(SelBase):
     -> TrainTestEpochSet
     brain_region_cohort_name : varchar(40)
     curation_set_name : varchar(40)
-    -> EdenoDecodeErrSummParams
+    -> EdenoDecodeErrSummSecKeyParams
     -> EdenoDecodeErrParams
     -> EdenoDecodeParams
     ---
@@ -252,7 +252,7 @@ class EdenoDecodeErrSummSel(SelBase):
         curation_set_name = "runs_analysis_v1"
 
         # Define brain_region_units_cohort_types
-        brain_region_units_cohort_types = np.unique(EdenoDecodeErrSummParams.fetch("brain_region_units_cohort_type"))
+        brain_region_units_cohort_types = np.unique(EdenoDecodeErrSummSecKeyParams.fetch("brain_region_units_cohort_type"))
         # ...apply passed filter
         if "brain_region_units_cohort_type" in key_filter:
             brain_region_units_cohort_types = [
@@ -383,7 +383,7 @@ class EdenoDecodeErrSummSel(SelBase):
 
                         # Add in summary table param name
                         for boot_set_name in boot_set_names:
-                            for edeno_decode_err_summ_param_name in (EdenoDecodeErrSummParams & {
+                            for edeno_decode_err_summ_param_name in (EdenoDecodeErrSummSecKeyParams & {
                                 "boot_set_name": boot_set_name,
                                 "brain_region_units_cohort_type": brain_region_units_cohort_type}).fetch(
                                 "edeno_decode_err_summ_param_name"):
@@ -422,7 +422,7 @@ class EdenoDecodeErrSumm(PathWellPopSummBase):
         upstream_keys = (EdenoDecodeErrSummSel & key).fetch1("upstream_keys")
 
         # Get parameters
-        boot_set_name, edeno_decode_err_summ_bin_param_name = (EdenoDecodeErrSummParams & key).fetch1(
+        boot_set_name, edeno_decode_err_summ_bin_param_name = (EdenoDecodeErrSummSecKeyParams & key).fetch1(
             "boot_set_name", "edeno_decode_err_summ_bin_param_name")
 
         # Get parameters for binning error
@@ -550,7 +550,7 @@ class EdenoDecodeErrSumm(PathWellPopSummBase):
 
     def _get_val_text(self):
         # Define text based on whether brain region difference
-        boot_set_name = (EdenoDecodeErrSummParams & self.fetch1("KEY")).fetch1("boot_set_name")
+        boot_set_name = (EdenoDecodeErrSummSecKeyParams & self.fetch1("KEY")).fetch1("boot_set_name")
         if "brain_region_diff" in boot_set_name:
             return "Decode error\ndifference"
         return "Decode error"
@@ -563,7 +563,7 @@ class EdenoDecodeErrSumm(PathWellPopSummBase):
 
         # Define limits based on decode variable and whether brain region difference
         decode_variable_param_name = (EdenoDecodeParams & key).fetch1("decode_variable_param_name")
-        boot_set_name = (EdenoDecodeErrSummParams & key).fetch1("boot_set_name")
+        boot_set_name = (EdenoDecodeErrSummSecKeyParams & key).fetch1("boot_set_name")
         brain_region_diff = "brain_region_diff" in boot_set_name
 
         if decode_variable_param_name == "ppt_default":
@@ -698,7 +698,7 @@ class EdenoDecodeErrSumm(PathWellPopSummBase):
         default_params = table().get_default_table_entry_params()
         kwargs = add_defaults(kwargs, default_params, add_nonexistent_keys=True)
         # ...Add summary table param name
-        kwargs.update({"edeno_decode_err_summ_param_name": EdenoDecodeErrSummParams().lookup_param_name(
+        kwargs.update({"edeno_decode_err_summ_param_name": EdenoDecodeErrSummSecKeyParams().lookup_param_name(
             {k: kwargs[k] for k in [
                 "boot_set_name", "edeno_decode_err_summ_bin_param_name", "brain_region_units_cohort_type"]},
             args_as_dict=True)})

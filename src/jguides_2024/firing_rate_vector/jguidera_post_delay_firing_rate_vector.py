@@ -263,6 +263,16 @@ class RelPostDelFRVec(CovariateFRVecBase):
         return namedtuple("Inputs", "x labels df unit_names")(
             dig_rel_time, labels, fr_vec_df, np.asarray(fr_vec_df.columns))
 
+    def get_valid_covariate_bin_nums(self, key):
+        return (RelTimeWellPostDelayDigParams & key).get_valid_bin_nums()
+
+    def get_bin_centers_map(self):
+        key = self.fetch1("KEY")
+        x = (RelTimeWellPostDelayDigParams & key).get_valid_bin_nums()
+        bin_centers = (self._fr_vec_table() & key).get_bin_centers()
+
+        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
+
     def get_bin_centers(self, key=None):
 
         # Get key if not passed
@@ -274,17 +284,6 @@ class RelPostDelFRVec(CovariateFRVecBase):
 
 # Overrides methods in CovariateFRVecAveBase in a manner specific to time relative to well arrival covariate
 class RelPostDelFRVecAveBase:
-
-    @staticmethod
-    def get_valid_covariate_bin_nums(key):
-        return (RelTimeWellPostDelayDigParams & key).get_valid_bin_nums()
-
-    def get_bin_centers_map(self):
-        key = self.fetch1("KEY")
-        x = (RelTimeWellPostDelayDigParams & key).get_valid_bin_nums()
-        bin_centers = (self._fr_vec_table() & key).get_bin_centers()
-
-        return AverageVectorDuringLabeledProgression.get_bin_centers_map(x, bin_centers)
 
     @staticmethod
     def _fr_vec_table():
