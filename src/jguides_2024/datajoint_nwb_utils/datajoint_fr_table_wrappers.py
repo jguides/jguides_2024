@@ -58,7 +58,7 @@ class PlotSTFRMap:
         # ...performance outcome name
         performance_outcome_name_map = {"path": "trial_end_performance_outcomes", "well_arrival": "performance_outcome"}
         # ...xlabel
-        xlabel_map = {"path": "Path fraction", "well_arrival": "Time in delay (s)"}
+        xlabel_map = {"path": "Path fraction", "well_arrival": "Time from well arrival (s)"}
         Restriction = namedtuple(
             'Restriction', 'restrict_time_period restrict_maze_name_type restrict_maze_name '
                            'performance_outcome_name fr_table xlabel')

@@ -1,11 +1,13 @@
 import datajoint as dj
 import spyglass as nd
+import numpy as np
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_decode_table_base import \
     DecodeCovFRVecParamsBase, DecodeCovFRVecBase, DecodeCovFRVecSelBase, DecodeCovFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     CovariateFRVecAveSelBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, get_table_secondary_key_names
+from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_delay_duration
 from src.jguides_2024.firing_rate_vector.jguidera_path_firing_rate_vector_decode import DecodeCovFRVecSummSecKeyParamsBase
 from src.jguides_2024.firing_rate_vector.jguidera_well_event_firing_rate_vector import TimeRelWAFRVec, \
     TimeRelWAFRVecParams
@@ -17,7 +19,7 @@ from src.jguides_2024.time_and_trials.jguidera_time_relative_to_well_event impor
     TimeRelWADigSingleAxisParams
 from src.jguides_2024.utils.dict_helpers import check_same_values_at_shared_keys
 from src.jguides_2024.utils.plot_helpers import plot_spanning_line
-from src.jguides_2024.utils.vector_helpers import unpack_single_element
+from src.jguides_2024.utils.vector_helpers import unpack_single_element, unpack_single_vector
 
 schema = dj.schema("jguidera_well_event_firing_rate_vector_decode")
 
@@ -55,35 +57,95 @@ class DecodeTimeRelWAFRVecParams(DecodeCovFRVecParamsBase):
 
     def insert_defaults(self, **kwargs):
 
-        for time_period_name, time_period_range in [("", [0, 2]), ("_expand", [-1, 3])]:
+        # Convention for naming decode_time_rel_wa_fr_vec_param_name: string together:
+        # classifier_name, decode_var, cross_validation_method, time_rel_wa_fr_vec_param_name
 
-            time_rel_wa_dig_param_name = TimeRelWADigParams().lookup_param_name([.25])
+        time_rel_wa_dig_param_name = TimeRelWADigParams().lookup_param_name([.25])
+
+        time_period_params = [("_expand", [-1, 3])]  # ("", [0, 2]),
+        for time_period_name, time_period_range in time_period_params:
+
+            pdaw_text = ""
+            if time_period_range[1] > get_delay_duration():
+                pdaw_text = "_pdaw"
+
             time_rel_wa_dig_single_axis_param_name = TimeRelWADigSingleAxisParams().lookup_param_name(time_period_range)
             time_bin_params = {"time_rel_wa_dig_param_name": time_rel_wa_dig_param_name,
-                "time_rel_wa_dig_single_axis_param_name": time_rel_wa_dig_single_axis_param_name,}
+                "time_rel_wa_dig_single_axis_param_name": time_rel_wa_dig_single_axis_param_name}
 
             # Decode time in delay on correct trials where rat stayed for full delay period
-            decode_time_rel_wa_fr_vec_param_name = f"LDA_time_in_delay_loocv_correct_stay_trials{time_period_name}"
+            decode_time_rel_wa_fr_vec_param_name = f"LDA_time_in_delay_loocv_correct_stay_trials{pdaw_text}{time_period_name}"
             decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
                 "classifier_name": "linear_discriminant_analysis", "decode_var": "time_in_delay",
-                "time_rel_wa_fr_vec_param_name": "correct_incorrect_stay_trials",
+                "time_rel_wa_fr_vec_param_name": f"correct_incorrect_stay_trials{pdaw_text}",
                 "cross_validation_method": "loocv"}}
             self.insert1(
                 {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
                  "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
 
-            # Decode correct vs. incorrect on trials where rat stayed for full delay period at destination well
-            decode_time_rel_wa_fr_vec_param_name = f"SVC_correct_incorrect_loocv_stay_trials_pdaw{time_period_name}"
+            # Decode previous path identity on trials where rat stayed for full delay period at destination well
+            decode_time_rel_wa_fr_vec_param_name = f"LDA_path_loocv_correct_stay_trials{pdaw_text}{time_period_name}"
             decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
-                "classifier_name": "SVC", "decode_var": "correct_incorrect",
-                "time_rel_wa_dig_param_name": time_rel_wa_dig_param_name,
-                "time_rel_wa_fr_vec_param_name": "correct_incorrect_stay_trials_pdaw",
+                "classifier_name": "linear_discriminant_analysis", "decode_var": "path",
+                "time_rel_wa_fr_vec_param_name": f"correct_incorrect_stay_trials{pdaw_text}",
                 "cross_validation_method": "loocv",
                 "cross_validation_always": True,
             }}
             self.insert1(
                 {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
                  "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
+
+            # Decode current well identity on trials where rat stayed for full delay period at destination well
+            decode_time_rel_wa_fr_vec_param_name = f"LDA_well_loocv_correct_stay_trials{pdaw_text}{time_period_name}"
+            decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
+                "classifier_name": "linear_discriminant_analysis", "decode_var": "well",
+                "time_rel_wa_fr_vec_param_name": f"correct_incorrect_stay_trials{pdaw_text}",
+                "cross_validation_method": "loocv",
+                "cross_validation_always": True,
+            }}
+            self.insert1(
+                {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+                 "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
+
+            # Decode correct vs. incorrect on trials where rat stayed for full delay period at destination well
+            decode_time_rel_wa_fr_vec_param_name = f"SVC_correct_incorrect_loocv_stay_trials{pdaw_text}{time_period_name}"
+            decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
+                "classifier_name": "SVC", "decode_var": "correct_incorrect",
+                "time_rel_wa_fr_vec_param_name": f"correct_incorrect_stay_trials{pdaw_text}",
+                "cross_validation_method": "loocv",
+                "cross_validation_always": True,
+            }}
+            self.insert1(
+                {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+                 "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
+
+            # Decode outbound path on correct trials where rat stayed for full delay period at destination well
+            decode_time_rel_wa_fr_vec_param_name = f"LDA_outbound_path_loocv_correct_stay_trials{pdaw_text}{time_period_name}"
+            decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
+                "classifier_name": "linear_discriminant_analysis", "decode_var": "outbound_path",
+                "time_rel_wa_fr_vec_param_name": f"correct_incorrect_stay_trials{pdaw_text}",
+                "cross_validation_method": "loocv",
+                "cross_validation_always": True,
+            }}
+            self.insert1(
+                {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+                 "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
+
+        # Decode stay vs. leave when rat at well
+        decode_time_rel_wa_fr_vec_param_name = "SVC_stay_leave_loocv_stay_leave_trials_pre_departure"
+        time_period_range = [0, 2]
+        time_rel_wa_dig_single_axis_param_name = TimeRelWADigSingleAxisParams().lookup_param_name(time_period_range)
+        time_bin_params = {"time_rel_wa_dig_param_name": time_rel_wa_dig_param_name,
+                           "time_rel_wa_dig_single_axis_param_name": time_rel_wa_dig_single_axis_param_name}
+        decode_time_rel_wa_fr_vec_params = {**time_bin_params, **{
+            "classifier_name": "SVC", "decode_var": "stay_leave",
+            "time_rel_wa_fr_vec_param_name": "stay_leave_trials_pre_departure",
+            "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }}
+        self.insert1(
+            {"decode_time_rel_wa_fr_vec_param_name": decode_time_rel_wa_fr_vec_param_name,
+             "decode_time_rel_wa_fr_vec_params": decode_time_rel_wa_fr_vec_params}, skip_duplicates=True)
 
 
 @schema
@@ -107,12 +169,15 @@ class DecodeTimeRelWAFRVecSel(CovariateFRVecAveSelBase):
     # to those defined in params for a given decode_time_rel_wa_fr_vec_param_name
     def _get_potential_keys(self, key_filter=None, populate_tables=False):
 
-        key_filter = {
+        if key_filter is None:
+            key_filter = dict()
+
+        key_filter.update({
             "time_rel_wa_dig_param_name": TimeRelWADigParams().lookup_param_name([.25]),
-            "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0}
+            "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0})
 
         potential_keys = []
-        for param_name, params in DecodeTimeRelWAFRVecParams().fetch():
+        for param_name, params in (DecodeTimeRelWAFRVecParams & key_filter).fetch():
             key_filter.update({
                 "decode_time_rel_wa_fr_vec_param_name": param_name,
                 "time_rel_wa_dig_param_name": params["time_rel_wa_dig_param_name"],
@@ -130,7 +195,8 @@ class DecodeTimeRelWAFRVecSel(CovariateFRVecAveSelBase):
         delete_(self, [DecodeTimeRelWAFRVec], key, safemode)
 
     def _get_cov_fr_vec_param_names(self):
-        return ["correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw"]
+        return [
+            "correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw", "stay_leave_trials_pre_departure"]
 
 
 @schema
@@ -288,18 +354,11 @@ class DecodeTimeRelWAFRVecSumm(DecodeCovFRVecSummBase):
         return (TimeRelWADigSingleAxisParams & self.fetch1("KEY")).fetch1("rel_time_start", "rel_time_end")
 
     def _get_xticks(self):
-        return [0, .5, 1]
-
-    def _get_val_lims(self, **kwargs):
-        # Get a set range for value, e.g. for use in plotting value on same range across plots
-        params_table = self._get_params_table()()
-        boot_set_name = self.get_upstream_param("boot_set_name")
-        if boot_set_name in params_table._valid_brain_region_diff_boot_set_names():
-            return [-.5, .5]
-        return [0, 1]
+        x1, x2 = self._get_x_lims()
+        return np.arange(x1, x2 + 1, 1)
 
     def _get_x_text(self):
-        return "Time in delay (s)"
+        return "Time from well arrival (s)"
 
     def _get_vals_index_name(self):
         return "x_val"
@@ -308,7 +367,48 @@ class DecodeTimeRelWAFRVecSumm(DecodeCovFRVecSummBase):
 
         super().extend_plot_results(**kwargs)
 
-        # Vertical lines to denote zero, if x lower limit before zero
-        if not kwargs["empty_plot"] and kwargs["xlim"][0] < 0:
+        if not kwargs["empty_plot"]:
+
             ax = kwargs["ax"]
-            plot_spanning_line(ax.get_ylim(), 0, ax, "y", color="brown")
+
+            # Colored patches to denote task phase
+            from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_task_period_color_map
+            task_period_color_map = get_task_period_color_map()
+
+            # ...Path traversal
+            xlims = ax.get_xlim()
+            x_start = xlims[0]
+            x_extent = 0 - xlims[0]
+            ylims = ax.get_ylim()
+            y_start = ylims[1]
+            y_extent = (ylims[1] - ylims[0]) * .1
+            color = task_period_color_map["path traversal"]
+            from matplotlib.patches import Rectangle
+            if x_extent > 0:
+                ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+            # ...Delay
+            x_start = 0
+            x_extent = get_delay_duration()
+            color = task_period_color_map["delay"]
+            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+            # ...Post delay
+            x_start = 2
+            x_extent = xlims[1] - x_start
+            color = task_period_color_map["post delay"]
+            if x_extent > 0:
+                ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+            # ...Update y lims
+            ax.set_ylim([ylims[0], ylims[1] + y_extent])
+
+            # Line at chance
+            # ...get decode variable
+            key = self.fetch1("KEY")
+            upstream_params = (self._upstream_table()()._get_params_table() & key).get_params()
+            decode_var = upstream_params["decode_var"]
+            boot_set_name = (self._get_params_table() & key).get_params()["boot_set_name"]
+            if decode_var in ["time_in_delay"] and boot_set_name in ["default", "default_rat_cohort"]:
+                y_val = 1/len(np.unique(self.fetch1_dataframes().metric_df.x_val))
+                plot_spanning_line(ax.get_xlim(), y_val, ax, "x", color="black")

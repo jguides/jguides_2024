@@ -170,6 +170,9 @@ class SecKeyParamsBase(ParamsBase):
         # Get param name table. Error thrown if not present
         return get_table(unpack_single_element([x for x in get_upstream_table_names(self) if "ParamName" in x]))
 
+    def get_params(self):
+        return {k: self.fetch1(k) for k in get_table_secondary_key_names(self)}
+
 
 class SelBase(dj.Manual):
 
@@ -411,8 +414,8 @@ class ComputedBase(dj.Computed):
     def get_object_id_name(self, leave_out_object_id=False, unpack_single_object_id=True):
         return get_table_object_id_name(self, leave_out_object_id, unpack_single_object_id)
 
-    def fetch_nwb(self):
-        return fetch_nwb(self)
+    def fetch_nwb(self, **kwargs):
+        return fetch_nwb(self, **kwargs)
 
     @staticmethod
     def get_default_df_index_name(df_index_name, object_id_name, df_index_name_map):

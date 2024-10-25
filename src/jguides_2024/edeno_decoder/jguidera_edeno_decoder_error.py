@@ -596,7 +596,7 @@ class EdenoDecodeErrSumm(PathWellPopSummBase):
         if decode_variable_param_name == "ppt_default":
             return "Path fraction"
         elif decode_variable_param_name == "wa_default":
-            return "Time in delay (s)"
+            return "Time from well arrival (s)"
 
     def _get_x_lims(self):
         decode_variable_param_name = (EdenoDecodeParams() & self.fetch1("KEY")).fetch1("decode_variable_param_name")

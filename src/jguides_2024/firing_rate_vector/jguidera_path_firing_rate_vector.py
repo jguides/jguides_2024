@@ -9,7 +9,8 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
     CovariateFRVecSTAveParamsBase, \
     CovariateFRVecAveSelBase, CovariateFRVecTrialAveBase, CovariateFRVecSTAveBase, CovariateFRVecBase, \
     CovariateFRVecSelBase, CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
-    CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, PathFRVecSummBase
+    CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, PathFRVecSummBase, \
+    CovariateFRVecParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
@@ -47,7 +48,7 @@ schema = dj.schema("jguidera_path_firing_rate_vector")
 
 
 @schema
-class PathFRVecParams(SecKeyParamsBase):
+class PathFRVecParams(CovariateFRVecParamsBase):
     definition = """
     # Parameters for PathFRVec
     path_fr_vec_param_name : varchar(40)

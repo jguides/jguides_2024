@@ -454,8 +454,9 @@ def trial_duration_from_params_table(trials_table, column_name, param_name):
 
 
 def format_path_name(path_name):
-
-    return path_name.replace("_to_", "-").replace("_well", "")
+    from src.jguides_2024.position_and_maze.jguidera_maze import RewardWellPath
+    split_char = RewardWellPath._join_well_char()
+    return path_name.replace(split_char, "-").replace("_well", "")
 
 
 def abbreviate_path_name(path_name):
@@ -980,6 +981,9 @@ def get_schema_names():
         for x in os.listdir(f"{module_path}/{child_dir}")
         if x[:len(target_start_string)] == target_start_string]
 
+    # Ignore schema names with ___jb_old___
+    schema_names = [x for x in schema_names if "___jb_old___" not in x]
+
     return [x.replace(".py", "") for x in schema_names]
 
 
@@ -1102,10 +1106,61 @@ def convert_path_name(path_name):
     :return: path name in string form (if tuple form passed), or in tuple form (if string form passed)
     """
 
+    from src.jguides_2024.position_and_maze.jguidera_maze import RewardWellPath
+    split_char = RewardWellPath._join_well_char()
+
     if isinstance(path_name, tuple):
-        return "_to_".join(path_name)
+        return split_char.join(path_name)
     elif isinstance(path_name, str):
-        return tuple(path_name.split("_to_"))
+        return tuple(path_name.split(split_char))
+
+
+def extract_from_path_name(path_name, extract_name=False, verbose=False):
+    """
+    Get name of destination well from a path name
+    :param path_name: str. Should be of form {start well}_to_{end well}{possibly other descriptors}
+    :param extract_name: str. Describes what to extract from path name.
+    :return: str, end well name
+    """
+
+    valid_extract_names = ["end_well", "end_well_plus_descriptor", "descriptor"]
+    check_membership([extract_name], valid_extract_names)
+
+    path_name_tuple = convert_path_name(path_name)
+
+    if len(path_name_tuple) != 2:
+        raise Exception(f"path_name should have exactly one '_to_' but has {len(path_name_tuple)}")
+
+    end_well_plus_descriptor = path_name_tuple[1]
+
+    # Get end well name and check whether valid (helpful check no matter what quantity is being returned)
+
+    split_char = "_well"
+
+    end_well_plus_descriptor_tuple = end_well_plus_descriptor.split(split_char)
+
+    end_well_name = end_well_plus_descriptor_tuple[0] + split_char
+
+    # ...Check that end well name valid
+    from src.jguides_2024.position_and_maze.jguidera_maze import RewardWell
+    check_membership([end_well_name], (
+            RewardWell & {"universal_track_graph_name": "fork_maze_universal"}).fetch1("well_names"))
+
+    # Return specified quantity
+    if extract_name == "end_well_plus_descriptor":
+        val = end_well_plus_descriptor
+    elif extract_name == "end_well":
+        val = "end_well"
+    elif extract_name == "descriptor":
+        val = split_char.join(end_well_plus_descriptor_tuple[1:])
+        # Remove leading underscore if present
+        if val.startswith("_"):
+            val = val[1:]
+
+    if verbose:
+        print(f"identified {extract_name} as: {val}")
+
+    return val
 
 
 def make_table_param_names(table, secondary_key_splits):

@@ -61,7 +61,7 @@ class RewardWellPath(ComputedBase):
     def make(self, key):
         well_names = (RewardWell & key).fetch1("well_names")
         key.update(
-            {"path_names": np.asarray(["_to_".join(x) for x in list(itertools.permutations(well_names, r=2))])})
+            {"path_names": np.asarray([self._join_well_char().join(x) for x in list(itertools.permutations(well_names, r=2))])})
         insert1_print(self, key)
 
     @staticmethod
@@ -1189,8 +1189,10 @@ class MazePathWell:
                                             {"contingency": contingency}).fetch1("active_contingencies")
         home_well_names = [AlternationTaskWellIdentities().get_well_name("home_well", active_contingency)
                            for active_contingency in potential_active_contingencies]
+        from src.jguides_2024.position_and_maze.jguidera_maze import RewardWellPath
+        split_char = RewardWellPath._join_well_char()
         path_names = {home_well_name: [path_name for path_name in cls.get_rewarded_path_names(contingency=contingency)
-                if path_name.split("_to_")[position] == home_well_name] for home_well_name in home_well_names}
+                if path_name.split(split_char)[position] == home_well_name] for home_well_name in home_well_names}
 
         # Return in dictionary with home well name as key if indicated, otherwise concatenate all path names
         if as_dict:
@@ -1248,8 +1250,6 @@ class MazePathWell:
                 "same_path_outbound_prev_correct_incorrect_trials": cls.get_outbound_path_names,
 
                 "same_path_outbound_correct_correct_stay_trials": cls.get_outbound_path_names,
-
-                "same_path": cls.get_rewarded_path_names,
 
                 "same_path_even_odd_trials": cls.get_rewarded_path_names,
                 "same_path_even_odd_stay_trials": cls.get_rewarded_path_names,

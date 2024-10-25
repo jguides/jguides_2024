@@ -36,11 +36,13 @@ def unzip_as_list(list_tuples):
     return list(x), list(y)
 
 
-def reverse_pair(pair):
+def reverse_pair(pair, reverse=True):
     # Check that pair passed
     if len(pair) != 2:
         raise Exception(f"pair must have exactly two elements")
-    return (pair[1], pair[0])
+    if reverse:
+        return (pair[1], pair[0])
+    return pair
 
 
 def add_reversed_pairs(pairs):

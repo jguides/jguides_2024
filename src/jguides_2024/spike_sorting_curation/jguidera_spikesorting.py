@@ -178,10 +178,11 @@ def return_spikesorting_params():
     for region in ["CA1"]:
         parameter_set_dict["sorter_params_name"][region] = "franklab_tetrode_hippocampus_30KHz"
         parameter_set_dict["preproc_params_name"][region] = "franklab_tetrode_hippocampus_min_seg"
-        from src.jguides_2024.spike_sorting_curation.jguidera_artifact import ArtifactDetectionAcrossSortGroupsParams  # local import to avoid circular import
+        from src.jguides_2024.spike_sorting_curation.jguidera_artifact import \
+            ArtifactDetectionAcrossSortGroupsParams  # local import to avoid circular import
         parameter_set_dict["artifact"][region] = ArtifactDetectionAcrossSortGroupsParams().get_default_param_name()
     for region in ["mPFC", "OFC", "Cortex"]:
-        parameter_set_dict["sorter_params_name"][region] = "franklab_probe_ctx_30KHz_115rad"
+        parameter_set_dict["sorter_params_name"][region] = "franklab_probe_ctx_30KHz_115rad_30clip"
         parameter_set_dict["preproc_params_name"][region] = "default_min_seg"
         from src.jguides_2024.spike_sorting_curation.jguidera_artifact import return_global_artifact_detection_params
         parameter_set_dict["artifact"][region] = list(return_global_artifact_detection_params().keys())[0]
@@ -220,12 +221,13 @@ def targeted_region_filter_parameter_set_name_map():
 
 
 class DefineSortInterval:
-    def __init__(self, starting_interval_list_names, nwb_file_name, NO_PREMAZE, NO_HOME, NO_SLEEP):
+    def __init__(self, starting_interval_list_names, nwb_file_name, NO_PREMAZE, NO_HOME, NO_SLEEP, version_num=None):
         self.starting_interval_list_names = starting_interval_list_names
         self.nwb_file_name = nwb_file_name
         self.NO_PREMAZE = NO_PREMAZE
         self.NO_HOME = NO_HOME
         self.NO_SLEEP = NO_SLEEP
+        self.version_num = version_num
 
     @staticmethod
     # Define sort interval name as interval list name and vice versa
@@ -274,7 +276,8 @@ class DefineSortInterval:
             nwb_file_name=self.nwb_file_name,
             NO_PREMAZE=self.NO_PREMAZE,
             NO_HOME=self.NO_HOME,
-            NO_SLEEP=self.NO_SLEEP)
+            NO_SLEEP=self.NO_SLEEP,
+            version_num=self.version_num)
         IntervalList.insert1(
             {"nwb_file_name": self.nwb_file_name, "interval_list_name": obj.new_interval_list_name,
              "valid_times": obj.new_interval_list}, skip_duplicates=True)
@@ -295,13 +298,21 @@ def define_sort_intervals(targeted_location, nwb_file_name, curation_set_name="r
     are unstable
     :param targeted_location: str, targeted brain region (e.g. CA1, OFC, mPFC)
     :param nwb_file_name: str, name of nwb file
+    :param curation_set_name: str
+    :param version_num: str
     :return: interval lists
     """
 
     # Define sort interval params based on brain region and nwb_file_name
 
     # Define for analysis on runs sessions
-    if curation_set_name == "runs_analysis_v1":
+    if curation_set_name in ["runs_analysis_v1", "runs_analysis_v2"]:
+
+        if curation_set_name == "runs_analysis_v1":
+            version_num = None
+        elif curation_set_name == "runs_analysis_v2":
+            version_num = "v2"
+
         # Case 1: concatenated run and sleep (default)
         starting_interval_list_names_list = [[
             "raw data valid times"]]  # use these interval lists and make changes as indicated by flags
@@ -320,11 +331,19 @@ def define_sort_intervals(targeted_location, nwb_file_name, curation_set_name="r
                 [EpochIntervalListName().get_interval_list_name(nwb_file_name, epoch)]
                 for epoch in (RunEpoch & {"nwb_file_name": nwb_file_name}).fetch("epoch")]
 
+    elif curation_set_name == "test":
+        starting_interval_list_names_list = [[
+            "pos 1 valid times"]]  # use these interval lists and make changes as indicated by flags
+        NO_PREMAZE = True  # True to exclude periods when rat being carried to maze
+        NO_HOME = True  # True to exclude home epochs
+        NO_SLEEP = False  # True to exclude sleep epochs
+        version_num = "v1"
+
     else:
         raise Exception(f"No code written for case where curation_set_name {curation_set_name}")
 
     return [DefineSortInterval(
-        starting_interval_list_names, nwb_file_name, NO_PREMAZE, NO_HOME, NO_SLEEP).get_sort_interval_obj()
+        starting_interval_list_names, nwb_file_name, NO_PREMAZE, NO_HOME, NO_SLEEP, version_num).get_sort_interval_obj()
             for starting_interval_list_names in starting_interval_list_names_list]
 
 

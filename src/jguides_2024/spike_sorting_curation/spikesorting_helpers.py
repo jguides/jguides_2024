@@ -2,6 +2,7 @@ import os as os
 from pathlib import Path
 
 from spyglass.spikesorting.v0.spikesorting_sorting import SpikeSorterParameters
+from spyglass.spikesorting.v0.spikesorting_recording import SpikeSortingPreprocessingParameters
 
 
 def set_spikesorting_directories(base_dir):
@@ -82,6 +83,39 @@ def add_franklab_sorter_params():
     SpikeSorterParameters.insert1({"sorter": sorter,
                                     "sorter_params_name": sorter_params_name,
                                     "sorter_params": sorter_params}, skip_duplicates=True)
+
+    sorter_params_name = "franklab_probe_ctx_30KHz_115rad_30clip"
+    sorter_params = {'detect_sign': -1,
+                  'adjacency_radius': 115,
+                  'freq_min': 300,
+                  'freq_max': 6000,
+                  'filter': False,
+                  'whiten': True,
+                  'num_workers': 1,
+                  'clip_size': 30,
+                  'detect_threshold': 3,
+                  'detect_interval': 10}
+    SpikeSorterParameters.insert1({"sorter": sorter,
+                                    "sorter_params_name": sorter_params_name,
+                                    "sorter_params": sorter_params}, skip_duplicates=True)
+
+
+def add_franklab_preproc_params():
+
+    SpikeSortingPreprocessingParameters.insert1(
+        {'preproc_params_name': 'franklab_tetrode_hippocampus_min_seg',
+     'preproc_params': {'frequency_min': 600,
+      'frequency_max': 6000,
+      'margin_ms': 5,
+      'seed': 0,
+      'min_segment_length': 0.0015}}, skip_duplicates=True)
+
+    SpikeSortingPreprocessingParameters.insert1(
+    {'preproc_params_name': 'default',
+     'preproc_params': {'frequency_min': 300,
+      'frequency_max': 6000,
+      'margin_ms': 5,
+      'seed': 0}}, skip_duplicates=True)
 
 
 # Get channels with peak waveform, with code used for CuratedSpikeSorting

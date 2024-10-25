@@ -9,7 +9,8 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
     CovariateFRVecBase, CovariateFRVecSTAveParamsBase, \
     CovariateFRVecAveSelBase, CovariateFRVecTrialAveBase, CovariateFRVecSTAveBase, CovariateFRVecSelBase, \
     CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
-    CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, TimeRelWAFRVecSummBase
+    CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, TimeRelWAFRVecSummBase, \
+    CovariateFRVecParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
@@ -57,7 +58,7 @@ post well arrival period.
 # TODO: if remake this table, increase allowed length of time_rel_wa_fr_vec_param_name (currently at 40). Do same for related tables.
 # Once have done that, switch eo_correct_incorrect_stay_trials_pdaw to even_odd_correct_incorrect_stay_trials_pdaw
 @schema
-class TimeRelWAFRVecParams(SecKeyParamsBase):
+class TimeRelWAFRVecParams(CovariateFRVecParamsBase):
     definition = """
     # Parameters for TimeRelWAFRVec
     time_rel_wa_fr_vec_param_name : varchar(80)
@@ -135,7 +136,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds_2]
         primary_time_rel_wa_dig_single_axis_param_names_2 = [
                 TimeRelWADigSingleAxisParams().lookup_param_name(x)
-                for x in [[0, 2], [-1, 3]]]  # make all combinations with each of these
+                for x in [[-1, 3], [0, 2]]]  # make all combinations with each of these
 
         # Restrict above params if outside params passed
         if "time_rel_wa_fr_vec_param_name" in key_filter:
@@ -534,8 +535,30 @@ class TimeRelWAFRVecSTAveSel(TimeRelWAFRVecAveSelBase):
     time_rel_wa_fr_vec_param_name : varchar(40)
     """
 
+    def _get_potential_keys(self, key_filter=None, populate_tables=False):
+
+        # Restrict params based on cov_fr_vec_param_names
+        cov_fr_vec_param_names = self._get_cov_fr_vec_param_names()
+
+        if "time_rel_wa_fr_vec_param_name" in key_filter:
+            cov_fr_vec_param_names = [key_filter["time_rel_wa_fr_vec_param_name"]]
+
+        cov_fr_vec_param_names_params_map = {
+            "correct_incorrect_stay_trials_pdaw": {"time_rel_wa_dig_single_axis_param_name": "-1^3"}}
+
+        potential_keys = []
+        for cov_fr_vec_param_name in cov_fr_vec_param_names:
+            key_filter.update({"cov_fr_vec_param_name": cov_fr_vec_param_name})
+            if cov_fr_vec_param_name in cov_fr_vec_param_names_params_map:
+                key_filter.update(cov_fr_vec_param_names_params_map[cov_fr_vec_param_name])
+
+            potential_keys += super()._get_potential_keys(key_filter=key_filter)
+
+        return potential_keys
+
     def _get_cov_fr_vec_param_names(self):
-        return ["stay_leave_trials_pre_departure", "correct_incorrect_stay_trials"]
+        return [
+            "stay_leave_trials_pre_departure", "correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw"]
 
     def delete_(self, key, safemode=True):
         delete_(self, [TimeRelWAFRVecSTAve], key, safemode)

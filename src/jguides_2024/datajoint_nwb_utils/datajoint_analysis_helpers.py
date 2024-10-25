@@ -254,3 +254,7 @@ def plot_horizontal_lines(xlims, y_vals, ax):
         ax.plot(xlims, [y_val] * 2, color="gray", alpha=.3)
 
 
+def get_task_period_color_map():
+    return {"path traversal": "rosybrown", "delay": "burlywood", "post delay": "navajowhite"}
+
+

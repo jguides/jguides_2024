@@ -8,9 +8,9 @@ import pandas as pd
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     PopulationAnalysisSelBase, PathWellFRVecSummBase
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, ParamsBase
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import ComputedBase, ParamsBase, SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, insert_analysis_table_entry, \
-    insert1_print, get_table_secondary_key_names
+    insert1_print, get_table_secondary_key_names, get_table_name
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_nwb_file_name_epochs_description
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RecordingSet
@@ -20,7 +20,9 @@ from src.jguides_2024.utils.dict_helpers import add_defaults
 from src.jguides_2024.utils.hierarchical_bootstrap import hierarchical_bootstrap
 from src.jguides_2024.utils.plot_helpers import get_fig_axes, format_ax, get_ax_for_layout
 from src.jguides_2024.utils.set_helpers import check_membership
-from src.jguides_2024.utils.vector_helpers import unpack_single_element
+from src.jguides_2024.utils.tuple_helpers import reverse_pair
+from src.jguides_2024.utils.vector_helpers import unpack_single_element, unique_in_order
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import extract_from_path_name
 
 
 # This function must be defined in module and not be a method of a class in order for parallelization to work
@@ -70,11 +72,26 @@ def _get_dfs(table_key):
     return df[other_summary_table_columns + additional_columns]
 
 
-def get_eps_labels(epoch_1, epoch_2, label_1, label_2):
-    return "^".join([str(x) for x in [epoch_1, epoch_2, label_1, label_2]])
+def get_eps_labels(epochs_1, epochs_2, labels_1=None, labels_2=None):
+    labels_none = all([x is None for x in np.concatenate((labels_1, labels_2))])
+    no_labels_none = all([x is not None for x in np.concatenate((labels_1, labels_2))])
+
+    if not np.logical_or(labels_none, no_labels_none):
+        raise Exception(f"label_1 and label_2 must both be None or neither must be None")
+
+    epochs_1_text = "&".join([str(x) for x in epochs_1])
+    epochs_2_text = "&".join([str(x) for x in epochs_2])
+    epochs_text = "^".join([epochs_1_text, epochs_2_text])
+    if labels_none:
+        return epochs_text
+
+    labels_1_text = "&".join([str(x) for x in labels_1])
+    labels_2_text = "&".join([str(x) for x in labels_2])
+    labels_text = "^".join([labels_1_text, labels_2_text])
+    return "^^".join([epochs_text , labels_text])
 
 
-class DecodeCovFRVecParamsBase(ParamsBase):
+class DecodeCovFRVecParamsBase(SecKeyParamsBase):
 
     def get_params(self):
         return self.fetch1(unpack_single_element(get_table_secondary_key_names(self)))
@@ -86,10 +103,17 @@ class DecodeCovFRVecParamsBase(ParamsBase):
 class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
 
     def _get_param_name_map(self, key_filter, brain_region_units_cohort_types):
-        # Define summary table param name based on recording set name.
-        # To do this, define map from recording set name and brain_region_units_cohort_type to summary table param names
+        # Define summary table param name based on key parameters
 
         params_table = self._get_params_table()()
+
+        # Map from particular boot set names (not necessarily all possible) to valid param names
+        relationship_div_decode_cov_fr_vec_param_names = [
+            "LDA_path_progression_loocv_correct_stay_trials",
+            "LDA_time_in_delay_loocv_correct_stay_trials_pdaw_expand"]
+        boot_set_name_param_name_map = {
+            "relationship_div_median": relationship_div_decode_cov_fr_vec_param_names,
+            "relationship_div_rat_cohort_median": relationship_div_decode_cov_fr_vec_param_names}
 
         recording_set_names_boot_set_names = [
 
@@ -106,10 +130,8 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
         param_name_map = dict()
         for recording_set_name, boot_set_name in recording_set_names_boot_set_names:
             for brain_region_units_cohort_type in brain_region_units_cohort_types:
-                param_name_map_key = self._format_param_name_map_key(recording_set_name, brain_region_units_cohort_type)
-                if param_name_map_key not in param_name_map:
-                    param_name_map[param_name_map_key] = []
 
+                # Get summary table param names
                 params_table_keys = params_table.fetch("KEY")
                 param_names = [
                     key[params_table.meta_param_name()] for key in params_table_keys if all([(
@@ -117,23 +139,52 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
                         "boot_set_name", "brain_region_units_cohort_type"], [
                         boot_set_name, brain_region_units_cohort_type])])]
 
-                param_name_map[param_name_map_key] += list(param_names)
+                # Get decode covariate fr vec param names
+                decode_cov_fr_vec_params_table = self._get_main_table()._upstream_table()()._get_params_table()()
+                decode_cov_fr_vec_meta_param_name = decode_cov_fr_vec_params_table.meta_param_name()
+                decode_cov_fr_vec_param_names = decode_cov_fr_vec_params_table.fetch(
+                    decode_cov_fr_vec_meta_param_name)
+
+                # Restrict decode_cov_fr_vec_param_names based on boot_set_name
+                if boot_set_name in boot_set_name_param_name_map:
+                    decode_cov_fr_vec_param_names = [
+                        x for x in decode_cov_fr_vec_param_names if x in boot_set_name_param_name_map[boot_set_name]]
+
+                for decode_cov_fr_vec_param_name in decode_cov_fr_vec_param_names:
+
+                    # Get param name map key
+                    kwargs = {
+                        "recording_set_name": recording_set_name,
+                        decode_cov_fr_vec_meta_param_name: decode_cov_fr_vec_param_name,
+                        "brain_region_units_cohort_type": brain_region_units_cohort_type}
+                    param_name_map_key = self._format_param_name_map_key(**kwargs)
+
+                    if param_name_map_key not in param_name_map:
+                        param_name_map[param_name_map_key] = []
+
+                    param_name_map[param_name_map_key] += list(param_names)
 
         return param_name_map
 
-    @staticmethod
-    def _format_param_name_map_key(recording_set_name, brain_region_units_cohort_type):
-        return (recording_set_name, brain_region_units_cohort_type)
+    def _format_param_name_map_key(self, **kwargs):
 
-    def _get_param_name_map_key(self, key, brain_region_units_cohort_type):
-        # Make key to param name map given a set of parameters
-        return self._format_param_name_map_key(key["recording_set_name"], brain_region_units_cohort_type)
+        # Get decode_cov_fr_vec_param_name if not passed
+        decode_cov_fr_vec_params_table = self._get_main_table()._upstream_table()()._get_params_table()()
+        decode_cov_fr_vec_meta_param_name = decode_cov_fr_vec_params_table.meta_param_name()
+        if decode_cov_fr_vec_meta_param_name not in kwargs:
+            kwargs[decode_cov_fr_vec_meta_param_name] = kwargs["key"][decode_cov_fr_vec_meta_param_name]
+
+        return tuple([
+            kwargs[x] for x in [
+                "recording_set_name", "brain_region_units_cohort_type",
+                decode_cov_fr_vec_meta_param_name]])
 
     def _default_noncohort_boot_set_names(self):
-        return super()._default_noncohort_boot_set_names() + ["brain_region_diff"]
+        return super()._default_noncohort_boot_set_names() + ["brain_region_diff", "relationship_div_median"]
 
     def _default_cohort_boot_set_names(self):
-        return super()._default_cohort_boot_set_names() + ["brain_region_diff_rat_cohort"]
+        return super()._default_cohort_boot_set_names() + [
+            "brain_region_diff_rat_cohort", "relationship_div_rat_cohort_median"]
 
     def delete_(self, key, safemode=True):
         # If recording set name not in key but components that determine it are, then
@@ -147,15 +198,17 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
 
     def insert1(self, key, **kwargs):
 
-        # Concatenate performance dfs across entries
-        df_concat = self._get_main_table()()._upstream_table()().get_concat_metric_df(key["upstream_keys"])
-
         # Only populate if no entry in main table. Alternative is to set skip_insertion to True for part table,
         # but would prevent catching undesired duplicate entries
         table_key = {k: v for k, v in key.items() if k in self.primary_key}  # just check for match at primary key
-        print("table_key:")
-        print(table_key)
+
         if len(self & table_key) == 0:
+
+            # Concatenate performance dfs across entries
+            df_concat = self._get_main_table()()._upstream_table()().get_concat_metric_df(key["upstream_keys"])
+
+            if len(df_concat) == 0:
+                raise Exception(f"df_concat empty. This is not expected")
 
             # Insert into main table
             key = insert_analysis_table_entry(self, [df_concat], key, skip_insertion=True)
@@ -177,23 +230,31 @@ class DecodeCovFRVecBase(ComputedBase):
     def delete_(self, key, safemode=True):
         delete_(self, [], key, safemode)
 
-    def _get_vector_df_subset_quantities(self, vector_df, x, label, decode_var):
+    def _get_vector_df_subset_quantities(self, vector_df, x, labels, decode_var):
 
-        valid_bool = vector_df["label"] == label
+        # Restrict df if indicated
+        valid_bool = np.ones(len(vector_df))
+        # ...label
+        if labels is not None:
+            valid_bool *= np.asarray([x in labels for x in vector_df["label"]])
+        # ...x
         if not np.isnan(x):
             valid_bool *= vector_df["x"] == x
-
+        # ...Apply restriction
         iloc_idxs = np.where(valid_bool)[0]
-
         df_subset = vector_df.iloc[iloc_idxs]
 
         # Define vectors
         vectors = np.vstack(df_subset.vector)
 
         # Define classes
-        if decode_var in ["path_progression", "time_in_delay"]:
+        if decode_var in ["path_progression", "path_progression_collapse_path", "time_in_delay"]:
             classes = np.asarray(df_subset.x)
-        elif decode_var == "correct_incorrect":
+        elif decode_var in [
+            "stay_leave",
+            "correct_incorrect", "previous_correct_incorrect",
+            "outbound_path", "path", "previous_path",
+            "well", "destination_well"]:
             classes = np.asarray(df_subset.label)
         else:
             raise Exception(f"decode_var {decode_var} not accounted for")
@@ -240,6 +301,291 @@ class DecodeCovFRVecBase(ComputedBase):
         # Predict classes based on test vectors
         return clf.predict(test_vectors)
 
+    @staticmethod
+    def _get_min_num_samples_train_test(
+            classifier_name, cross_validation_method, cross_validate):
+        # Define minimum number of classes that must be present to proceed with decoding
+
+        # If LDA: require at least two instances of class for training (e.g. correct vs. incorrect)
+        # across every x (e.g. path progression bin), since LDA estimates covariance which
+        # requires at least 2 samples
+        min_num_classes = 1
+        if classifier_name == "linear_discriminant_analysis":
+            min_num_classes = 2
+
+        # If using leave one out cross validation, require one additional class so that
+        # there are always previous min_num_classes available for training after
+        # holding out any given trial for testing.
+        if cross_validation_method == "loocv" and cross_validate:
+            min_num_classes += 1
+
+        return min_num_classes
+
+    def _get_train_test_data(self, epochs, key, vector_df):
+
+        # Get parameters
+        params_table_subset = (self._get_params_table() & key)
+        decode_cov_fr_vec_params = params_table_subset.get_params()
+        decode_cov_fr_vec_params_meta_name = params_table_subset.meta_param_name()
+        decode_cov_fr_vec_params_name = params_table_subset.fetch1(decode_cov_fr_vec_params_meta_name)
+        cov_fr_vec_meta_param_name = self._fr_vec_table()()._get_params_table()().meta_param_name()
+        cov_fr_vec_param_name = decode_cov_fr_vec_params[cov_fr_vec_meta_param_name]
+        decode_var = decode_cov_fr_vec_params["decode_var"]
+        classifier_name = decode_cov_fr_vec_params["classifier_name"]
+        cross_validation_method = decode_cov_fr_vec_params["cross_validation_method"]
+        cross_validation_always = decode_cov_fr_vec_params.pop("cross_validation_always", False)
+
+        nwb_file_name = key["nwb_file_name"]
+
+        # Define order of train and test epochs
+        epoch_train_test_orders = np.arange(0, len(np.unique(epochs)))
+
+        # Define epochs
+        if len(epochs) == 1:
+            epoch_1 = epoch_2 = unpack_single_element(epochs)
+            train_epochs = test_epochs = epochs_1 = epochs_2 = [epoch_1]
+            epoch_train_test_order = 0
+        else:
+            epoch_1, epoch_2 = epochs
+            # Raise error until fully code up multiple epochs case
+            raise Exception(f"Code currently not equipped to run with multiple epochs")
+
+        # Define x to iterate over separately. If we are decoding task progression, want to
+        # iterate over all x together. Otherwise, want to iterate over each x (e.g.
+        # decoding correct and incorrect at each path progression bin)
+        if decode_var in [
+            "path_progression", "path_progression_collapse_path", "time_in_delay"]:
+            iterate_x_list = [np.nan]
+        elif decode_var in [
+            "stay_leave",
+            "correct_incorrect", "previous_correct_incorrect",
+            "path", "previous_path", "outbound_path",
+            "well", "destination_well"]:
+            iterate_x_list = np.unique(vector_df.x)
+            # Check that no nans in list with x
+            if np.sum(np.isnan(iterate_x_list) > 0):
+                raise Exception(f"nans in x, this is unexpected")
+        else:
+            raise Exception(f"Defining x to iterate over. Case with decode_var = {decode_var} not accounted for.")
+
+        # Get train/test data for decoding
+        num_possible_iterations = 0
+        num_skipped_iterations = 0
+        data_list = []
+
+        # NON PATH NAME PAIR TYPES
+        if decode_var in [
+            "path", "previous_path", "well", "destination_well", "path_progression_collapse_path"]:
+
+            label_pair_name = label_train_test_order = None
+
+            cov_fr_vec_params_table = self._fr_vec_table()()._get_params_table()()
+            cov_fr_vec_meta_param_name = cov_fr_vec_params_table.meta_param_name()
+            cov_fr_vec_params_table_subset = (
+                    cov_fr_vec_params_table & {cov_fr_vec_meta_param_name: cov_fr_vec_param_name})
+
+            # Define labels
+            if decode_var in ["path", "previous_path"]:
+                labels = MazePathWell().get_rewarded_path_names_across_epochs(
+                    nwb_file_name, epochs)
+
+            elif decode_var in ["well", "destination_well"]:
+                labels = MazePathWell().get_well_names_across_epochs(
+                    nwb_file_name, epochs, rewarded_wells=True)
+
+            elif decode_var in ["path_progression_collapse_path"]:
+                labels = [""]
+
+            else:
+                raise Exception(f"Case for {decode_var} not covered in defining labels")
+
+            labels = cov_fr_vec_params_table_subset.update_labels(labels)
+
+            # Drop incorrect trials if decode_cov_fr_vec_params_name indicates only considering correct trials
+            if decode_cov_fr_vec_params_name in [
+                "LDA_path_loocv_correct_stay_trials",
+                "LDA_path_loocv_correct_stay_trials_pdaw_expand",
+                "LDA_well_loocv_correct_stay_trials_pdaw_expand",
+                "LDA_destination_well_loocv_correct_stay_trials",
+                "LDA_path_progression_collapse_path_loocv_correct_stay_trial",
+            ]:
+                labels = [x for x in labels if "_correct_trial" in x]
+            else:
+                raise Exception(f"Finding valid labels. {decode_cov_fr_vec_params_name} not accounted for")
+
+            # Cross validation (if indicated by variable or if only one label such that train/test label same)
+            if cross_validation_always or len(labels) == 1:
+
+                cross_validate = cross_validation_always
+
+                # Skip labels with insufficient samples. Require all x for a label to meet minimum sample criterion
+                min_num_classes = self._get_min_num_samples_train_test(
+                    classifier_name, cross_validation_method, cross_validate)
+                insufficient_trials_labels = []
+                unique_x = np.unique(vector_df.x)
+                for label in labels:
+                    df_subset = df_filter_columns(vector_df, {"label": label})
+                    if len(df_subset) == 0:
+                        insufficient_trials_labels.append(label)
+                    if any([np.sum(df_subset.x == x) < min_num_classes for x in unique_x]):
+                        insufficient_trials_labels.append(label)
+
+                num_possible_iterations += len(iterate_x_list)
+                if len(insufficient_trials_labels) > 0:
+                    print(f"insufficient trials for labels {insufficient_trials_labels}. Excluding these...")
+
+                    if len(insufficient_trials_labels) == len(labels):
+                        num_skipped_iterations += len(iterate_x_list)
+
+                    labels = [x for x in labels if x not in insufficient_trials_labels]
+
+                labels_1 = labels_2 = train_labels = test_labels = labels
+
+                for x in iterate_x_list:
+
+                    # Store
+                    data_list.append(
+                        (label_pair_name, label_train_test_order, epoch_train_test_order,
+                         epochs_1, epochs_2, labels_1, labels_2,
+                         train_epochs, test_epochs, train_labels, test_labels,
+                         x, cross_validate))
+            else:
+                raise Exception(f"case where decode var is {decode_var} and not cross validation is"
+                                f" not accounted for")
+
+        # PATH NAME PAIR TYPES (E.G. SAME PATH, SAME TURN PATH)
+        elif decode_var in [
+            "path_progression", "time_in_delay", "correct_incorrect", "previous_correct_incorrect", "outbound_path",
+            "stay_leave"
+        ]:
+
+            # Define condition comparisons based on param name
+            valid_names = None
+            if cov_fr_vec_param_name in [
+                "prev_correct_incorrect_trials",
+                "correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw", "stay_leave_trials_pre_departure"]:
+
+                if decode_var in ["path_progression", "time_in_delay"]:
+                    valid_names = [
+                        "same_path_correct_correct_stay_trials", "same_turn_correct_correct_stay_trials",
+                        "inbound_correct_correct_stay_trials", "outbound_correct_correct_stay_trials",
+                        "different_turn_well_correct_correct_stay_trials"]
+
+                elif decode_var in ["outbound_path"]:
+                    valid_names = ["outbound_correct_correct_stay_trials"]
+
+                elif decode_var in ["correct_incorrect"]:
+                    valid_names = ["same_path_correct_incorrect_stay_trials"]
+
+                elif decode_var in ["previous_correct_incorrect"]:
+                    valid_names = ["same_path_prev_correct_incorrect_trials"]
+
+                elif decode_var in ["stay_leave"]:
+                    valid_names = ["same_path_stay_leave_trials"]
+
+            elif cov_fr_vec_param_name in ["correct_incorrect_trials"]:
+
+                if decode_var in ["correct_incorrect"]:
+                    valid_names = ["same_path_correct_incorrect_trials"]
+
+            # Raise error if valid names not defined (params not accounted for)
+            if valid_names is None:
+                raise Exception(
+                    f"Pair of cov_fr_vec_param_name {cov_fr_vec_param_name} and decode_var {decode_var} "
+                    f"not accounted for in code to define condition comparisons")
+
+            # Get map from path name pair types to path name pairs
+            include_reversed_pairs = False
+            path_name_pair_types_map = dict()
+            for epoch in epochs:
+                path_name_pair_types_map.update(MazePathWell.get_path_name_pair_types_map(
+                    nwb_file_name=nwb_file_name, epoch=epoch, valid_names=valid_names,
+                    include_reversed_pairs=include_reversed_pairs))
+            # ...Raise error if map empty
+            if len(path_name_pair_types_map) == 0:
+                raise Exception(f"path_name_pair_types_map is empty. This is not expected. Check that "
+                                f"valid_names={valid_names} is accounted for in "
+                                f"MazePathWell.get_path_name_pair_types_map")
+
+            # Loop through path name pair types
+            for label_pair_name, label_pairs in path_name_pair_types_map.items():
+
+                # Loop through label pairs for this path name pair type (e.g. instances of same turn paths)
+                for label_1, label_2 in label_pairs:
+                    labels_1 = [label_1]
+                    labels_2 = [label_2]
+
+                    # Define train/test orders
+                    label_train_test_orders = np.arange(0, len(np.unique([label_1, label_2])))
+
+                    # If leave one out cross validation in all cases, no need to reverse train/test labels
+                    if cross_validation_always and cross_validation_method == "loocv":
+                        label_train_test_orders = [0]
+
+                    # Loop through label train/test orders
+                    for label_train_test_order in label_train_test_orders:
+
+                        # Loop through epoch train/test orders
+                        for epoch_train_test_order in epoch_train_test_orders:
+
+                            # Define train/test epochs and labels based on order
+
+                            # EPOCHS
+                            reverse = epoch_train_test_order == 1
+                            train_epoch, test_epoch = reverse_pair([epoch_1, epoch_2], reverse)
+                            train_epochs = [train_epoch]
+                            test_epochs = [test_epoch]
+
+                            # LABELS
+                            reverse = label_train_test_order == 1
+                            train_label, test_label = reverse_pair([label_1, label_2], reverse)
+                            train_labels = [train_label]
+                            test_labels = [test_label]
+
+                            # Indicate whether or not to cross validate
+                            # ...Define whether same train and test label and train and test epoch
+                            same_train_test_labels_epochs = np.logical_and(
+                                set(train_labels) == set(test_labels), set(train_epochs) == set(test_epochs))
+                            cross_validate = np.logical_or(same_train_test_labels_epochs, cross_validation_always)
+
+                            # Continue to next iteration if insufficient samples
+                            min_num_classes = self._get_min_num_samples_train_test(
+                                classifier_name, cross_validation_method, cross_validate)
+                            insufficient_trials = False
+                            unique_x = np.unique(vector_df.x)
+                            for label in [label_1, label_2]:
+                                df_subset = df_filter_columns(vector_df, {"label": label})
+                                if len(df_subset) == 0:
+                                    insufficient_trials = True
+                                if any([np.sum(df_subset.x == x) < min_num_classes for x in unique_x]):
+                                    insufficient_trials = True
+
+                            num_possible_iterations += len(iterate_x_list)
+                            if insufficient_trials:
+                                print(f"{label_1} {label_2} pair does not have sufficient trials. Skipping...")
+                                print("trials per x:", [np.sum(df_subset.x == x) for x in unique_x])
+                                num_skipped_iterations += len(iterate_x_list)
+                                continue
+
+                            # Loop through x
+                            for x in iterate_x_list:
+
+                                # Store
+                                data_list.append(
+                                    (label_pair_name, label_train_test_order, epoch_train_test_order,
+                                     epochs_1, epochs_2, labels_1, labels_2,
+                                     train_epochs, test_epochs, train_labels, test_labels,
+                                     x, cross_validate))
+
+        else:
+            raise Exception(f"{decode_var} not accounted for")
+
+        return df_from_data_list(data_list, [
+                "label_pair_name", "label_train_test_order", "epoch_train_test_order",
+                "epochs_1", "epochs_2", "labels_1", "labels_2",
+                "train_epochs", "test_epochs", "train_labels", "test_labels",
+                "x", "cross_validate"]), num_possible_iterations, num_skipped_iterations
+
     def get_cmat_df(self, key):
 
         # Get df with confusion matrices
@@ -248,285 +594,191 @@ class DecodeCovFRVecBase(ComputedBase):
         # Get params
         params_table = self._get_params_table()
         decode_cov_fr_vec_params = (params_table & key).get_params()
-        cov_fr_vec_meta_param_name = self._fr_vec_table()()._get_params_table()().meta_param_name()
-        cov_fr_vec_param_name = decode_cov_fr_vec_params[cov_fr_vec_meta_param_name]
         decode_var = decode_cov_fr_vec_params["decode_var"]
+        classifier_name = decode_cov_fr_vec_params["classifier_name"]
         cross_validation_method = decode_cov_fr_vec_params["cross_validation_method"]
         cross_validation_always = decode_cov_fr_vec_params.pop("cross_validation_always", False)
 
-        # Define condition comparisons based on param name
-        valid_names = None
-        if cov_fr_vec_param_name in ["correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw"]:
-            if decode_var in ["path_progression", "time_in_delay"]:
-                valid_names = [
-                    "same_path_correct_correct_stay_trials", "same_turn_correct_correct_stay_trials",
-                    "inbound_correct_correct_stay_trials", "outbound_correct_correct_stay_trials",
-                    "different_turn_well_correct_correct_stay_trials"]
-            elif decode_var in ["correct_incorrect"]:
-                valid_names = [
-                    "same_path_correct_incorrect_stay_trials"]
-
-        # Raise error if valid names not defined (params not accounted for)
-        if valid_names is None:
-            raise Exception(f"{cov_fr_vec_param_name} not accounted for in code to define condition comparisons")
-
         # Define epochs (for now coded for one epoch)
         epochs = (EpochsDescription & key).fetch1("epochs")
-
-        # Get map from path name pair types to path name pairs
-        include_reversed_pairs = False
-        path_name_pair_types_map = dict()
-        for epoch in epochs:
-            path_name_pair_types_map.update(MazePathWell.get_path_name_pair_types_map(
-                nwb_file_name=key["nwb_file_name"], epoch=epoch, valid_names=valid_names,
-                include_reversed_pairs=include_reversed_pairs))
-
-        if len(path_name_pair_types_map) == 0:
-            raise Exception(f"path_name_pair_types_map is empty. This is not expected. Check that "
-                            f"valid_names={valid_names} is accounted for in MazePathWell.get_path_name_pair_types_map")
-
-        # Get valid bin numbers
-        valid_bin_nums = params_table().get_valid_bin_nums(key=key)
 
         # Get firing rate vectors and covariate
         vector_df_name = "vector_df"
         concat_df = self._fr_vec_table()().concat_across_epochs(key, vector_df_name)
 
-        # Omit invalid x
+        # Restrict firing rate vectors to those at valid x
+        # ...Get valid bin numbers
+        valid_bin_nums = params_table().get_valid_bin_nums(key=key)
+        # ...Restrict
         vector_df = concat_df[concat_df.isin({"x": valid_bin_nums}).x]
 
-        # Define order of train and test epochs
-        epoch_train_test_orders = np.arange(0, len(np.unique(epochs)))
-
-        # Define epochs
-        if len(epochs) == 1:
-            epoch_1 = epoch_2 = unpack_single_element(epochs)
+        # Alter labels if indicated
+        table_name = get_table_name(self)
+        if np.logical_or(table_name == "DecodeTimeRelWAFRVec" and decode_var == "well",
+                         table_name == "DecodePathFRVec" and decode_var == "destination_well"):
+            vector_df.label = [extract_from_path_name(x, "end_well_plus_descriptor") for x in vector_df.label]
+        elif decode_var in ["path_progression_collapse_path"]:
+            vector_df.label = [extract_from_path_name(x, "descriptor") for x in vector_df.label]
+        elif decode_var in ["correct_incorrect", "previous_correct_incorrect"]:
+            pass
         else:
-            epoch_1, epoch_2 = epochs
-            # Raise error until fully code up multiple epochs case
-            raise Exception(f"Code currently not equipped to run with multiple epochs")
+            raise Exception(f"Altering labels. Case decode_var = {decode_var} not accounted for.")
 
-        # Decode and get confusion matrices
-        num_possible_iterations = 0
-        num_skipped_iterations = 0
+        # Get train/test data to loop through
+        train_test_df, num_possible_iterations, num_skipped_iterations = self._get_train_test_data(
+            epochs, key, vector_df)
+
+        # Loop through train/test data
         data_list = []
+        for _, df_row in train_test_df.iterrows():
 
-        for label_pair_name, label_pairs in path_name_pair_types_map.items():
+            # Define train/test sets for decoding, and decode either 1) using cross validation or
+            # 2) not using cross validation
 
-            for label_1, label_2 in label_pairs:
+            # CROSS VALIDATION
+            if df_row.cross_validate:
 
-                label_train_test_orders = np.arange(0, len(np.unique([label_1, label_2])))
+                # Leave one out cross validation
+                if cross_validation_method == "loocv":
 
-                # If leave one out cross validation in all cases, no need to reverse train/test labels
-                if cross_validation_always and cross_validation_method == "loocv":
-                    label_train_test_orders = [0]
+                    # Get data for training and testing
 
-                for label_train_test_order in label_train_test_orders:
+                    # ...If same train and test labels and epochs, get one set of data
+                    same_train_test_labels_epochs = np.logical_and(
+                        set(df_row.train_labels) == set(df_row.test_labels),
+                        set(df_row.train_epochs) == set(df_row.test_epochs))
+                    if same_train_test_labels_epochs:
+                        data = self._get_vector_df_subset_quantities(
+                            vector_df, df_row.x, df_row.train_labels, decode_var)
 
-                    for epoch_train_test_order in epoch_train_test_orders:
+                    # ...If not same train and test labels but doing cross validation, combine sets of
+                    # data for train and test
+                    elif cross_validation_always:
 
-                        # Define train/test epochs and labels based on order
+                        train_data = self._get_vector_df_subset_quantities(
+                            vector_df, df_row.x, df_row.train_labels, decode_var)
+                        test_data = self._get_vector_df_subset_quantities(
+                            vector_df, df_row.x, df_row.test_labels, decode_var)
+                        new_fields = [np.concatenate(
+                                [getattr(d, x) for d in [train_data, test_data]])
+                                for x in train_data._fields]
+                        data = self._vector_df_subset_quantities(*new_fields)
 
-                        # EPOCHS
-                        # First order
-                        train_epoch = epoch_1
-                        test_epoch = epoch_2
-                        # Second order: reverse train and test
-                        if epoch_train_test_order == 1:
-                            train_epoch = epoch_2
-                            test_epoch = epoch_1
+                    # ...Otherwise raise an exception
+                    else:
+                        raise Exception(f"case not accounted for")
 
-                        # LABELS
-                        # First order
-                        train_label = label_1
-                        test_label = label_2
-                        # Second order: reverse train and test
-                        if label_train_test_order == 1:
-                            train_label = label_2
-                            test_label = label_1
+                    # Test each trial having trained on remaining trials
+                    # We also need to track corresponding iloc_idxs so we can store
 
-                        # Define x to iterate over separately. If we are decoding task progression, want to
-                        # iterate over all x together. Otherwise, want to iterate over each x (e.g.
-                        # decoding correct and incorrect at each path progression bin)
-                        if decode_var in ["path_progression", "time_in_delay"]:
-                            x_list = [np.nan]
-                        elif decode_var == "correct_incorrect":
-                            x_list = np.unique(vector_df.x)
-                            if np.sum(np.isnan(x_list) > 0):
-                                raise Exception(f"nans in x, this is unexpected")
-                        else:
-                            raise Exception(f"case not accounted for")
+                    # ...Initialize variables
+                    test_classes = []
+                    predicted_labels = []
+                    train_iloc_idxs = []
+                    test_iloc_idxs = []
 
-                        # Define minimum number of classes that must be present to proceed with decoding
+                    # ...Find unique epoch numbers
+                    unique_epoch_trial_numbers = np.unique(data.epoch_trial_numbers)
 
-                        # If LDA: require at least two instances of class for training (e.g. correct vs. incorrect)
-                        # across every x (e.g. path progression bin), since LDA estimates covariance which
-                        # requires at least 2 samples
-                        min_num_classes = 1
-                        classifier_name = decode_cov_fr_vec_params["classifier_name"]
-                        if classifier_name == "linear_discriminant_analysis":
-                            min_num_classes = 2
+                    # ...Loop through each trial number, hold one out, train on the remaining, and
+                    # decode
+                    for epoch_trial_number in unique_epoch_trial_numbers:
 
-                        # If using leave one out cross validation, require one additional class so that
-                        # there are always previous min_num_classes available for training after
-                        # holding any given trial for testing.
-                        if cross_validation_method == "loocv" and np.logical_or(
-                                cross_validation_always, label_1 == label_2):
-                            min_num_classes += 1
+                        # Define boolean for train and test
+                        test_bool = data.epoch_trial_numbers == epoch_trial_number
+                        train_bool = np.invert(test_bool)
 
-                        # Continue to next iteration if insufficient samples
-                        insufficient_trials = False
-                        for label in [label_1, label_2]:
-                            df_subset = df_filter_columns(vector_df, {"label": label})
-                            if len(df_subset) == 0:
-                                insufficient_trials = True
-                            if any([np.sum(df_subset.x == x) < min_num_classes for x in x_list]):
-                                insufficient_trials = True
+                        # Define train vectors and classes
+                        train_vectors_ = data.vectors[train_bool]
+                        train_classes_ = data.classes[train_bool]
 
-                        num_possible_iterations += len(x_list)
-                        if insufficient_trials:
-                            print(f"{label_1} {label_2} pair does not have sufficient trials. Skipping...")
-                            num_skipped_iterations += len(x_list)
-                            continue
+                        # Define test vectors and classes
+                        test_vectors_ = data.vectors[test_bool]
+                        test_classes_ = data.classes[test_bool]
 
-                        for x in x_list:
+                        # Store test classes
+                        test_classes += list(test_classes_)
 
-                            # Define train/test sets for decoding, and decode, either 1) using cross validation or
-                            # 2) not using cross validation
+                        # Track iloc idxs corresponding to data for training and testing
+                        train_iloc_idxs.append(data.iloc_idxs[train_bool])
+                        test_iloc_idxs.append(data.iloc_idxs[test_bool])
 
-                            # 1) CROSS VALIDATION
-                            # Do cross validation if train and test labels are the same, or if
-                            # indicated (cross_validation_always = True)
+                        # Predict and store
+                        predicted_labels += list(self.train_test(
+                            train_vectors_, train_classes_, test_vectors_, classifier_name))
 
-                            # ...Define whether same train and test label
-                            same_train_test_labels = train_label == test_label and train_epoch == test_epoch
+                    cmat, cmat_classes = self.get_confusion_matrix(test_classes, predicted_labels)
 
-                            # ...Proceed to cross validation if indicated
-                            if same_train_test_labels or cross_validation_always:
+                    # Keep track of data used for training and testing
 
-                                # Leave one out cross validation
-                                if cross_validation_method == "loocv":
+                    # Define number of trials used for training and testing, in total and for each
+                    # training iteration
+                    total_num_train_trials = total_num_test_trials = len(
+                        np.unique(data.epoch_trial_numbers))
+                    # subtract one since leave one out cross validation
+                    num_train_trials_per_iteration = total_num_train_trials - 1
+                    num_test_trials_per_iteration = 1
 
-                                    # Get data for training and testing
+                    # Define all classes used for training and testing
+                    all_train_classes = all_test_classes = data.classes
 
-                                    # ...If same train and test labels, get one set of data
-                                    if same_train_test_labels:
-                                        data = self._get_vector_df_subset_quantities(vector_df, x, label, decode_var)
+                # Raise exception if cross validation method not accounted for in code
+                else:
+                    raise Exception(
+                        f"cross_validation_method {cross_validation_method} not accounted for in code")
 
-                                    # ...If not same train and test labels but doing cross validation, combine sets of
-                                    # data for train and test
-                                    elif cross_validation_always:
+            # 2) NO CROSS VALIDATION. Train and test on sets of data defined by train_label and
+            # test_label
+            else:
 
-                                        train_data = self._get_vector_df_subset_quantities(
-                                            vector_df, x, train_label, decode_var)
-                                        test_data = self._get_vector_df_subset_quantities(
-                                            vector_df, x, test_label, decode_var)
-                                        new_fields = [np.concatenate(
-                                                [getattr(d, x) for d in [train_data, test_data]])
-                                                for x in train_data._fields]
-                                        data = self._vector_df_subset_quantities(*new_fields)
+                # Get train vectors and classes
+                train_data = self._get_vector_df_subset_quantities(
+                    vector_df, df_row.x, df_row.train_labels, decode_var)
 
-                                    # ...Otherwise raise an exception
-                                    else:
-                                        raise Exception(f"case not accounted for")
+                # Get test vectors and classes
+                test_data = self._get_vector_df_subset_quantities(vector_df, df_row.x, df_row.test_labels, decode_var)
 
-                                    # Test each trial having trained on remaining trials
-                                    # We also need to track corresponding iloc_idxs so we can store
+                # Compute confusion matrix
+                predicted_labels = self.train_test(
+                    train_data.vectors, train_data.classes, test_data.vectors, classifier_name)
+                cmat, cmat_classes = self.get_confusion_matrix(test_data.classes, predicted_labels)
 
-                                    # ...Initialize variables
-                                    test_classes = []
-                                    predicted_labels = []
-                                    train_iloc_idxs = []
-                                    test_iloc_idxs = []
+                # Define iloc idxs
+                train_iloc_idxs = train_data.iloc_idxs
+                test_iloc_idxs = test_data.iloc_idxs
 
-                                    # ...Find unique epoch numbers
-                                    unique_epoch_trial_numbers = np.unique(data.epoch_trial_numbers)
+                # Define number of trials used for training
+                total_num_train_trials = num_train_trials_per_iteration = len(
+                    np.unique(train_data.epoch_trial_numbers))
+                # Define number of trials tested
+                total_num_test_trials = num_test_trials_per_iteration = len(
+                    np.unique(test_data.epoch_trial_numbers))
 
-                                    # ...Loop through each trial number, hold one out, train on the remaining, and decode
-                                    for epoch_trial_number in unique_epoch_trial_numbers:
+                # Define all classes used for training and testing
+                all_train_classes = train_data.classes
+                all_test_classes = test_data.classes
 
-                                        # Define boolean for train and test
-                                        test_bool = data.epoch_trial_numbers == epoch_trial_number
-                                        train_bool = np.invert(test_bool)
+            # Define text indicating epochs and labels used for training and testing
+            # ...Original
+            original_eps_labels = get_eps_labels(df_row.epochs_1, df_row.epochs_2, df_row.labels_1, df_row.labels_2)
+            # ...After possibly reversing order as indicated
+            eps_labels = get_eps_labels(
+                df_row.train_epochs, df_row.test_epochs, df_row.train_labels, df_row.test_labels)
 
-                                        # Define train vectors and classes
-                                        train_vectors_ = data.vectors[train_bool]
-                                        train_classes_ = data.classes[train_bool]
-
-                                        # Define test vectors and classes
-                                        test_vectors_ = data.vectors[test_bool]
-                                        test_classes_ = data.classes[test_bool]
-
-                                        # Store test classes
-                                        test_classes += list(test_classes_)
-
-                                        # Track iloc idxs corresponding to data for training and testing
-                                        train_iloc_idxs.append(data.iloc_idxs[train_bool])
-                                        test_iloc_idxs.append(data.iloc_idxs[test_bool])
-
-                                        # Predict and store
-                                        predicted_labels += list(self.train_test(
-                                            train_vectors_, train_classes_, test_vectors_, classifier_name))
-
-                                    cmat, cmat_classes = self.get_confusion_matrix(test_classes, predicted_labels)
-
-                                    # Define number of trials used for training and testing, in total and for each
-                                    # training iteration
-                                    total_num_train_trials = total_num_test_trials = len(
-                                        np.unique(data.epoch_trial_numbers))
-                                    # subtract one since leave one out cross validation
-                                    num_train_trials_per_iteration = total_num_train_trials - 1
-                                    num_test_trials_per_iteration = 1
-
-                                # Raise exception if cross validation method not accounted for in code
-                                else:
-                                    raise Exception(
-                                        f"cross_validation_method {cross_validation_method} not accounted for in code")
-
-                            # 2) NO CROSS VALIDATION. Train and test on sets of data defined by train_label and test_label
-                            else:
-
-                                # Get train vectors and classes
-                                train_data = self._get_vector_df_subset_quantities(vector_df, x, train_label, decode_var)
-
-                                # Get test vectors and classes
-                                test_data = self._get_vector_df_subset_quantities(vector_df, x, test_label, decode_var)
-
-                                # Compute confusion matrix
-                                predicted_labels = self.train_test(
-                                    train_data.vectors, train_data.classes, test_data.vectors, classifier_name)
-                                cmat, cmat_classes = self.get_confusion_matrix(test_data.classes, predicted_labels)
-
-                                # Define iloc idxs
-                                train_iloc_idxs = train_data.iloc_idxs
-                                test_iloc_idxs = test_data.iloc_idxs
-
-                                # Define number of trials used for training
-                                total_num_train_trials = num_train_trials_per_iteration = len(
-                                    np.unique(train_data.epoch_trial_numbers))
-                                # Define number of trials tested
-                                total_num_test_trials = num_test_trials_per_iteration = len(
-                                    np.unique(test_data.epoch_trial_numbers))
-
-                            # Define text indicating epochs and labels used for training and testing
-                            # ...Original
-                            original_eps_labels = get_eps_labels(epoch_1, epoch_2, label_1, label_2)
-                            # ...After possibly reversing order as indicated
-                            eps_labels = get_eps_labels(train_epoch, test_epoch, train_label, test_label)
-
-                            # Store
-                            data_list.append(
-                                (x, label_pair_name, original_eps_labels, eps_labels, epoch_train_test_order,
-                                 label_train_test_order, train_label, test_label, train_epoch, test_epoch,
-                                 train_iloc_idxs, test_iloc_idxs, total_num_train_trials, total_num_test_trials,
-                                 num_train_trials_per_iteration, num_test_trials_per_iteration, cmat_classes, cmat))
+            # Store
+            data_list.append(
+                (df_row.x, df_row.label_pair_name, original_eps_labels, eps_labels, df_row.epoch_train_test_order,
+                 df_row.label_train_test_order, df_row.train_labels, df_row.test_labels, df_row.train_epochs,
+                 df_row.test_epochs, train_iloc_idxs, test_iloc_idxs, total_num_train_trials, total_num_test_trials,
+                 num_train_trials_per_iteration, num_test_trials_per_iteration,
+                 all_train_classes, all_test_classes, cmat_classes, cmat))
 
         # Define names for df columns
         df_column_names = ["x", "label_pair_name", "original_eps_labels", "eps_labels", "epoch_train_test_order",
-                           "label_train_test_order", "train_label", "test_label", "train_epoch", "test_epoch",
+                           "label_train_test_order", "train_labels", "test_labels", "train_epochs", "test_epochs",
                            "train_iloc_idxs", "test_iloc_idxs", "total_num_train_trials", "total_num_test_trials",
                            "num_train_trials_per_iteration", "num_test_trials_per_iteration",
-                           "confusion_matrix_classes", "confusion_matrix"]
+                           "all_train_classes", "all_test_classes", "confusion_matrix_classes", "confusion_matrix"]
 
         # Create df
         cmat_df = df_from_data_list(data_list, df_column_names)
@@ -542,8 +794,19 @@ class DecodeCovFRVecBase(ComputedBase):
         if len(cmat_df) == 0:
             cmat_df = get_empty_df(df_column_names)
 
+        # Convert None to "none" in df so can save as nwbf
+        none_columns = self._cmat_df_none_cols()
+        for column_name in none_columns:
+            if np.sum(cmat_df[column_name] == "none") > 0:
+                raise Exception(f"the string none already present in cmat_df columnn {column_name}")
+            cmat_df[column_name] = ["none" if x is None else x for x in cmat_df[column_name]]
+
         # Return df
         return cmat_df
+
+    @staticmethod
+    def _cmat_df_none_cols():
+        return ["label_pair_name", "label_train_test_order"]
 
     def make(self, key):
 
@@ -554,14 +817,15 @@ class DecodeCovFRVecBase(ComputedBase):
         # nwb file
         cmat_df.drop(columns=["train_iloc_idxs", "test_iloc_idxs"], inplace=True)
 
-        # Convert datatype of confusion_matrix_classes. Seems like cannot save hdf5 with array with characters
+        # Convert datatype of columns with arrays with characters, which cannot save in hdf5
         # (get broadcasting error). Tried converting to object datatype or storing as list in df but these
         # gave same error.
-        if any([isinstance(x, str) for y in cmat_df["confusion_matrix_classes"] for x in y]):
-            parse_char = self._parse_char()
-            if any([parse_char in x for x in cmat_df["confusion_matrix_classes"]]):
-                raise Exception(f"Cannot reformat data because parse_char is in data")
-            cmat_df["confusion_matrix_classes"] = [parse_char.join(x) for x in cmat_df["confusion_matrix_classes"]]
+        for column_name in self._char_column_names():
+            if any([isinstance(x, str) for y in cmat_df[column_name] for x in y]):
+                parse_char = self._parse_char()
+                if any([parse_char in x for x in cmat_df[column_name]]):
+                    raise Exception(f"Cannot reformat data because parse_char is in data")
+                cmat_df[column_name] = [parse_char.join(x) for x in cmat_df[column_name]]
 
         # Insert into main table
         insert_analysis_table_entry(self, [cmat_df], key)
@@ -575,18 +839,29 @@ class DecodeCovFRVecBase(ComputedBase):
     def _parse_char():
         return "_PARSESPACE_"
 
+    @staticmethod
+    def _char_column_names():
+        return ["train_labels", "test_labels", "confusion_matrix_classes", "all_train_classes", "all_test_classes"]
+
     def fetch1_dataframe(self, object_id_name=None, restore_empty_nwb_object=True, df_index_name=None):
 
+        # Get df
         cmat_df = super().fetch1_dataframe(object_id_name, restore_empty_nwb_object, df_index_name)
 
-        str_bool = [isinstance(x, str) for x in cmat_df["confusion_matrix_classes"]]
+        # Restore character arrays, which had to save out as single string with parse character to be hdf5 compatible
+        column_names = self._char_column_names()
+        for column_name in column_names:
 
-        if np.sum(str_bool) not in [0, len(str_bool)]:
-            raise Exception(f"Expect confusion_matrix_classes rows to have all strings or no strings")
-        if np.sum(str_bool) == len(str_bool):
-            cmat_df["confusion_matrix_classes"] = [
-                x.split(self._parse_char()) for x in cmat_df["confusion_matrix_classes"]]
+            str_bool = [isinstance(x, str) for x in cmat_df[column_name]]
 
+            if np.sum(str_bool) not in [0, len(str_bool)]:
+                raise Exception(f"Expect {column_name} rows to have all strings or no strings")
+
+            if np.sum(str_bool) == len(str_bool):
+                cmat_df[column_name] = [
+                    x.split(self._parse_char()) for x in cmat_df[column_name]]
+
+        # Return df
         return cmat_df
 
     def plot_ave_confusion_matrices(self):
@@ -633,7 +908,7 @@ class DecodeCovFRVecBase(ComputedBase):
 
                 format_ax(ax, title=label_pair_name.replace("_", " "), fontsize=6)
 
-    def plot_performance(self):
+    def plot_performance(self, **kwargs):
         # Plot performance
 
         # Get performance information
@@ -642,18 +917,23 @@ class DecodeCovFRVecBase(ComputedBase):
         # Average across label pair instances (e.g. same turn paths), train/test order, and label pair order (e.g.
         # whether path 1 or path 2 comes first)
         ave_across_column_names = [
-            "original_eps_labels", "eps_labels", "epoch_train_test_order", "label_train_test_order",
+            "original_eps_labels", "eps_labels", "train_labels", "test_labels", "epoch_train_test_order",
+            "train_epochs", "test_epochs", "label_train_test_order",
             "total_num_train_trials", "total_num_test_trials",
-            "num_train_trials_per_iteration", "num_test_trials_per_iteration"]
+            "num_train_trials_per_iteration", "num_test_trials_per_iteration", "confusion_matrix_class"]
         groupby_cols = [x for x in df.columns if x not in ave_across_column_names + ["val"]]
+        # To use groupby, convert columns with lists to string
+        for col in groupby_cols:
+            if type(df[col][0]) in [np.ndarray, list]:
+                df[col] = ["_".join([str(x) for x in y]) for y in df[col]]
         df = df.groupby(groupby_cols).mean(numeric_only=True).reset_index()
-        # appears that character columns already dropped, and so requires only specifying numerical columns to drop
-        df = df.drop(columns=["epoch_train_test_order", "label_train_test_order"])
 
         # Plot
 
         # Initialize figure
-        fig, ax = plt.subplots()
+        ax = kwargs.pop("ax", None)
+        if ax is None:
+            fig, ax = plt.subplots()
 
         # Get label pair names
         label_pair_names = np.unique(df.label_pair_name)
@@ -670,8 +950,8 @@ class DecodeCovFRVecBase(ComputedBase):
         format_ax(ax, title=title)
 
     def fetch1_performance_df(self, drop_column_names=(
-            "confusion_matrix", "train_classes", "test_classes", "train_label", "test_label", "train_epoch",
-            "test_epoch")):
+            "confusion_matrix", "train_label", "test_label", "train_epoch",
+            "test_epoch", "all_train_classes", "all_test_classes")):
 
         # Return df with performance information by test class label, separately for each class, and
         # optionally without columns
@@ -701,14 +981,25 @@ class DecodeCovFRVecBase(ComputedBase):
         # If decoding correct/incorrect, flatten df so that each correct/incorrect condition has its own row
         confusion_matrix_class_name = None
         if param_name in [
-            "LDA_path_progression_loocv_correct_stay_trials", "LDA_time_in_delay_loocv_correct_stay_trials",
-        "LDA_time_in_delay_loocv_correct_stay_trials_expand"
+            "LDA_path_progression_loocv_correct_stay_trials",
+            "LDA_path_progression_collapse_path_loocv_correct_stay_trial",
+            "LDA_time_in_delay_loocv_correct_stay_trials",
+            "LDA_time_in_delay_loocv_correct_stay_trials_pdaw_expand",
         ]:
             confusion_matrix_class_name = "x"
 
         elif param_name in [
-            "SVC_correct_incorrect_loocv_stay_trials", "SVC_correct_incorrect_loocv_stay_trials_pdaw",
-            "SVC_correct_incorrect_loocv_stay_trials_pdaw_expand"
+            "SVC_correct_incorrect_loocv",
+            "SVC_previous_correct_incorrect_loocv",
+            "SVC_correct_incorrect_loocv_stay_trials",
+            "SVC_correct_incorrect_loocv_stay_trials_pdaw",
+            "SVC_correct_incorrect_loocv_stay_trials_pdaw_expand",
+            "LDA_outbound_path_loocv_correct_stay_trials",
+            "LDA_outbound_path_loocv_correct_stay_trials_pdaw_expand",
+            "LDA_path_loocv_correct_stay_trials",
+            "LDA_well_loocv_correct_stay_trials_pdaw_expand",
+            "LDA_path_loocv_correct_stay_trials_pdaw_expand",
+            "LDA_destination_well_loocv_correct_stay_trials",
         ]:
             confusion_matrix_class_name = "confusion_matrix_class"
 
@@ -769,20 +1060,58 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
     def _upstream_table():
         raise Exception(f"This method must be overwritten in child class")
 
+    def _get_relationship_div_column_params(self, **kwargs):
+
+        upstream_table = self._upstream_table()()
+        decode_cov_fr_vec_params = (upstream_table._get_params_table() & kwargs["key"]).get_params()
+        cov_fr_vec_meta_param_name = upstream_table._fr_vec_table()()._get_params_table()().meta_param_name()
+        cov_fr_vec_param_name = decode_cov_fr_vec_params[cov_fr_vec_meta_param_name]
+        decode_var = decode_cov_fr_vec_params["decode_var"]
+
+        decode_meta_param_name = upstream_table._get_params_table()().meta_param_name()
+        decode_param_name = (upstream_table._get_params_table()() & kwargs["key"]).fetch1(decode_meta_param_name)
+
+        params = None
+        if cov_fr_vec_param_name in ["correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw"] \
+                and decode_param_name in [
+            "LDA_path_progression_loocv_correct_stay_trials", "LDA_time_in_delay_loocv_correct_stay_trials_pdaw_expand"
+        ]:
+
+            if decode_var in ["path_progression", "time_in_delay"]:
+                params = {
+                    "denominator_column_name": "same_path_correct_correct_stay_trials", "numerator_column_names": [
+                    "same_turn_correct_correct_stay_trials", "inbound_correct_correct_stay_trials",
+                        "outbound_correct_correct_stay_trials", "different_turn_well_correct_correct_stay_trials"]}
+
+        if params is None:
+            raise Exception(
+                f"combination of {cov_fr_vec_param_name}, {decode_param_name}, {decode_var} not accounted for")
+
+        return params
+
     def make(self, key):
 
         df_concat = (self._get_selection_table() & key).fetch1_dataframe()
 
-        # Drop columns
+        # Define columns to average across
+        average_across_cols = ["label_train_test_order", "epoch_train_test_order"]
+
+        # Define columns to drop
         drop_columns = [
             "total_num_train_trials", "total_num_test_trials", "num_train_trials_per_iteration",
             "num_test_trials_per_iteration",
             "nwb_file_name", "epochs_description"
         ]
+        # Add to columns to drop if 'none', otherwise average across
+        column_name = "label_train_test_order"
+        if all(df_concat[column_name] == "none"):
+            drop_columns.append(column_name)
+            average_across_cols.remove(column_name)
+
+        # Drop columns
         df_concat.drop(columns=drop_columns, inplace=True)
 
-        # Average across train/test order
-        average_across_cols = ["label_train_test_order", "epoch_train_test_order"]
+        # Average across
         groupby_cols = [x for x in df_concat.columns if x not in average_across_cols + ["val"]]
         metric_df = df_concat.groupby(groupby_cols).mean().reset_index().drop(
             columns=average_across_cols)
@@ -817,15 +1146,51 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
                 target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
                 eps_labels_resample_col_name, exclude_columns, debug_mode=False)
 
+        # average ratio of values across same path and same turn or different turn path relationships for
+        # path traversals and delay period
+        elif boot_set_name in self._get_params_table()()._valid_relationship_div_boot_set_names():
+
+            # First redefine metric_df to reflect ratio of val for same path and same turn or different turn
+            # relationship
+            kwargs = {"key": key}
+            div_params = self._get_relationship_div_column_params(**kwargs)
+            # ...Define pairs of relationships
+            target_column_name = "relationship"
+            target_column_pairs = [
+                (x, div_params["denominator_column_name"]) for x in div_params["numerator_column_names"]]
+            # ...Define function for computing metric on relationship pairs
+            metric_pair_fn = self.metric_pair_div
+            # ...Define columns at which to allow different values across members of pair. Here, these are columns
+            # that contain information about the context (path or well) rat is on, as we want to compare metrics
+            # across different contexts (paths or wells)
+            exclude_columns = ["original_eps_labels"]
+            # ...Get df with paired metric
+            metric_df = self.get_paired_metric_df(
+                metric_df, target_column_name, target_column_pairs, metric_pair_fn, exclude_columns=exclude_columns)
+
+            # Define parameters for bootstrap
+            # ...Define columns at which to resample during bootstrap, in order
+            resample_levels = ["nwb_file_name_epochs_description", "brain_region_units_param_name"]
+            # ...Define columns whose values to keep constant (no resampling across these)
+            vals_index_name =  self._get_vals_index_name()
+            ave_group_column_names = [
+                vals_index_name, "x_val", "brain_region", self._get_joint_column_name(target_column_name)] + \
+                                     self._get_pair_column_names(target_column_name)
+            ave_group_column_names = unique_in_order(ave_group_column_names)
+            # ...Alter params based on whether rat cohort
+            resample_levels, ave_group_column_names = self._alter_boot_params_rat_cohort(
+                boot_set_name, resample_levels, ave_group_column_names)
+
         # Raise exception if boot set name not accounted for in code
         else:
             raise Exception(f"Have not written code for boot_set_name {boot_set_name}")
 
         # Perform bootstrap
+        print("Boostrapping...")
         boot_results = hierarchical_bootstrap(
             metric_df, resample_levels, "val", ave_group_column_names,
             num_bootstrap_samples_=bootstrap_params.num_bootstrap_samples, average_fn_=bootstrap_params.average_fn,
-            alphas=bootstrap_params.alphas, debug_mode=False)
+            alphas=bootstrap_params.alphas)
 
         # Store dfs with results together to save out below
         # ...df with metric values
@@ -860,6 +1225,17 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
     def _get_vals_index_name(self):
         return "x_val"
 
+    def _get_val_lims(self, **kwargs):
+        # Get a set range for value, e.g. for use in plotting value on same range across plots
+        params_table = self._get_params_table()()
+        boot_set_name = self.get_upstream_param("boot_set_name")
+        scale_ymax = 1
+        if boot_set_name in params_table._valid_brain_region_diff_boot_set_names():
+            ymax = .6
+            return [-ymax, ymax*scale_ymax]
+        ymax = 1
+        return [0, ymax*scale_ymax]
+
     # Override parent class method so can add params specific to this table
     def get_default_table_entry_params(self):
 
@@ -869,7 +1245,13 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
         return params
 
     def _get_val_text(self):
-        return "Decode performance"
+        return "Decode\naccuracy"
+
+    def _get_val_ticks(self):
+        return [0, .5, 1]
+
+    def _get_yticklabels(self, ticks=None):
+        return ["0", "", "1"]
 
     def get_ordered_relationships(self):
 
@@ -912,6 +1294,11 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
         recording_set_names = kwargs.pop("recording_set_names")
         decode_cov_fr_vec_param_names = kwargs.pop("decode_cov_fr_vec_param_names")
 
+        if len(np.unique([len(x) for x in [
+            table_names, label_names, relationship_vals_list, decode_cov_fr_vec_param_names]])) != 1:
+            raise Exception(f"These must all be same length: "
+                            f"table_names, label_names, relationship_vals_list, decode_cov_fr_vec_param_names")
+
         param_sets = []
         # Loop through table names (and corresponding label names and relationship vals)
         for table_name, label_name, relationship_vals, decode_cov_fr_vec_param_name in zip(
@@ -947,4 +1334,5 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
                 param_sets.append(copy.deepcopy(key))
 
         # Return param sets
+
         return param_sets

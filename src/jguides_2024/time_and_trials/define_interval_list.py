@@ -15,7 +15,7 @@ from src.jguides_2024.utils.set_helpers import check_membership
 class NewIntervalList:
 
     def __init__(self, starting_interval_list_names, nwb_file_name, NO_PREMAZE=False, NO_HOME=False, NO_SLEEP=False,
-                 widen_exclusion_factor=.002):
+                 widen_exclusion_factor=.002, version_num=None):
 
         # Check inputs
         if not isinstance(starting_interval_list_names, list):
@@ -28,6 +28,7 @@ class NewIntervalList:
         self.NO_HOME = NO_HOME
         self.NO_SLEEP = NO_SLEEP
         self.widen_exclusion_factor = widen_exclusion_factor
+        self.version_num = version_num
 
         self.new_interval_list_name = self.define_new_interval_list_name()
         self.new_interval_list = self._get_new_interval_list()
@@ -68,6 +69,8 @@ class NewIntervalList:
             new_interval_list_name += self._no_home_text()
         if self.NO_SLEEP:
             new_interval_list_name += self._no_sleep_text()
+        if self.version_num is not None:
+            new_interval_list_name += f"_{self.version_num}"
         return new_interval_list_name
 
     @classmethod

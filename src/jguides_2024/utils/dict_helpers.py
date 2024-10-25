@@ -179,6 +179,11 @@ def check_shared_key_value(dicts, key, tolerate_error=False):
 
 def return_shared_key_value(dicts, key, tolerate_error=False):
     # Check that dictionaries have same value at a key, then return that value
+    obj = check_return_single_element(
+        [x[key] for x in dicts], tolerate_error=tolerate_error,
+        error_message=f"dictionaries do not match at key '{key}'")
+    if not obj.passed_check and tolerate_error:
+        return obj.passed_check
     return check_return_single_element(
         [x[key] for x in dicts], tolerate_error=tolerate_error,
         error_message=f"dictionaries do not match at key '{key}'").single_element

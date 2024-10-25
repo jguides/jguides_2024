@@ -4,17 +4,13 @@ from collections import namedtuple
 import numpy as np
 
 
-def check_single_element(x):
+def check_single_element(x, tolerate_error=False, error_message=None):
     """
     Check list for existence of a single unique element
     :param x: list with elements
+    :param tolerate_error: True or False, indicates whether to tolerate error
+    :param error_message: str, message to print if error thrown
     """
-    unique_elements = np.unique(list(x))
-    if len(unique_elements) != 1:
-        raise Exception(f"Should have found one unique element in list but found {len(unique_elements)}")
-
-
-def check_single_element(x, tolerate_error=False, error_message=None):
     unique_elements = np.unique(list(x))
     passed_check = True
     if len(unique_elements) != 1:

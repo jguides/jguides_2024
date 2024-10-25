@@ -322,8 +322,8 @@ class CurationSet(ComputedBase):
         # Local import to avoid circular import error
         from src.jguides_2024.spike_sorting_curation.jguidera_spikesorting import define_sort_intervals
 
-        brain_region_cohort_name = "all_targeted"
-        curation_set_name = "runs_analysis_v1"
+        brain_region_cohort_name = key["brain_region_cohort_name"]
+        curation_set_name = key["curation_set_name"]
         curation_id = 3
 
         nwb_file_name = key["nwb_file_name"]

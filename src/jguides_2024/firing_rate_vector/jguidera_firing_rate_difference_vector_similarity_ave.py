@@ -713,7 +713,9 @@ class FRDiffVecCosSimCovNnAveSummSelBase(PopulationAnalysisSelBase):
         param_name_map = dict()
         for recording_set_name, boot_set_name in recording_set_names_boot_set_names:
             for brain_region_units_cohort_type in brain_region_units_cohort_types:
-                param_name_map_key = self._format_param_name_map_key(recording_set_name, brain_region_units_cohort_type)
+                param_name_map_key = self._format_param_name_map_key(
+                    recording_set_name=recording_set_name,
+                    brain_region_units_cohort_type=brain_region_units_cohort_type)
                 if param_name_map_key not in param_name_map:
                     param_name_map[param_name_map_key] = []
                 param_names = (params_table & {
@@ -725,12 +727,8 @@ class FRDiffVecCosSimCovNnAveSummSelBase(PopulationAnalysisSelBase):
         return param_name_map
 
     @staticmethod
-    def _format_param_name_map_key(recording_set_name, brain_region_units_cohort_type):
-        return (recording_set_name, brain_region_units_cohort_type)
-
-    def _get_param_name_map_key(self, key, brain_region_units_cohort_type):
-        # Make key to param name map given a set of parameters
-        return self._format_param_name_map_key(key["recording_set_name"], brain_region_units_cohort_type)
+    def _format_param_name_map_key(self, **kwargs):
+        return (kwargs["recording_set_name"], kwargs["brain_region_units_cohort_type"])
 
     def _default_noncohort_boot_set_names(self):
         return super()._default_noncohort_boot_set_names() + ["brain_region_diff"]
@@ -1027,7 +1025,7 @@ class FRDiffVecCosSimWANnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
         return metric_df[valid_bool]
 
     def _get_x_text(self):
-        return "Time in delay (s)"
+        return "Time from well arrival (s)"
 
     def _get_x_lims(self):
         return [0, 2]

@@ -1,13 +1,12 @@
 import datajoint as dj
-import pandas as pd
 import spyglass as nd
 
+from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import plot_junction_fractions
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_decode_table_base import \
     DecodeCovFRVecBase, DecodeCovFRVecParamsBase, DecodeCovFRVecSelBase, DecodeCovFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
-    CovariateFRVecAveSelBase, PopulationAnalysisSecKeyParamsBase, PathWellFRVecSummBase, PopulationAnalysisParamsBase
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, insert_analysis_table_entry, \
-    get_table_secondary_key_names
+    CovariateFRVecAveSelBase, PopulationAnalysisParamsBase
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, get_table_secondary_key_names
 from src.jguides_2024.firing_rate_vector.jguidera_path_firing_rate_vector import PathFRVec, PathFRVecParams
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionCohort, CurationSet
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription
@@ -15,7 +14,7 @@ from src.jguides_2024.position_and_maze.jguidera_ppt import PptParams
 from src.jguides_2024.position_and_maze.jguidera_ppt_interp import PptDigParams
 from src.jguides_2024.spikes.jguidera_res_spikes import ResEpochSpikesSmParams
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, BrainRegionUnitsCohortType
-from src.jguides_2024.utils.hierarchical_bootstrap import hierarchical_bootstrap
+from src.jguides_2024.utils.plot_helpers import plot_spanning_line
 from src.jguides_2024.utils.vector_helpers import unpack_single_element
 
 schema = dj.schema("jguidera_path_firing_rate_vector_decode")
@@ -52,10 +51,54 @@ class DecodePathFRVecParams(DecodeCovFRVecParamsBase):
     def insert_defaults(self, **kwargs):
 
         # Decode path progression on correct trials where rat stayed for full delay period at destination well
+        # Decode training on one path, and testing on another path
         decode_path_fr_vec_param_name = "LDA_path_progression_loocv_correct_stay_trials"
         decode_path_fr_vec_params = {
             "classifier_name": "linear_discriminant_analysis", "decode_var": "path_progression",
             "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode path progression on correct trials where rat stayed for full delay period at destination well
+        # AND IGNORE PATH NAME
+        decode_path_fr_vec_param_name = "LDA_path_progression_collapse_path_loocv_correct_stay_trial"
+        decode_path_fr_vec_params = {
+            "classifier_name": "linear_discriminant_analysis", "decode_var": "path_progression_collapse_path",
+            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv"}
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode outbound path on correct trials where rat stayed for full delay period at destination well
+        decode_path_fr_vec_param_name = "LDA_outbound_path_loocv_correct_stay_trials"
+        decode_path_fr_vec_params = {
+            "classifier_name": "linear_discriminant_analysis", "decode_var": "outbound_path",
+            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode path identity on correct trials where rat stayed for full delay period at destination well
+        decode_path_fr_vec_param_name = "LDA_path_loocv_correct_stay_trials"
+        decode_path_fr_vec_params = {
+            "classifier_name": "linear_discriminant_analysis", "decode_var": "path",
+            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode upcoming well identity on correct trials where rat stayed for full delay period at destination well
+        decode_path_fr_vec_param_name = "LDA_destination_well_loocv_correct_stay_trials"
+        decode_path_fr_vec_params = {
+            "classifier_name": "linear_discriminant_analysis", "decode_var": "destination_well",
+            "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }
         self.insert1(
             {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
              "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
@@ -65,6 +108,28 @@ class DecodePathFRVecParams(DecodeCovFRVecParamsBase):
         decode_path_fr_vec_params = {
             "classifier_name": "SVC", "decode_var": "correct_incorrect",
             "path_fr_vec_param_name": "correct_incorrect_stay_trials", "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode correct vs. incorrect on all trials
+        decode_path_fr_vec_param_name = "SVC_correct_incorrect_loocv"
+        decode_path_fr_vec_params = {
+            "classifier_name": "SVC", "decode_var": "correct_incorrect",
+            "path_fr_vec_param_name": "correct_incorrect_trials", "cross_validation_method": "loocv",
+            "cross_validation_always": True,
+        }
+        self.insert1(
+            {"decode_path_fr_vec_param_name": decode_path_fr_vec_param_name,
+             "decode_path_fr_vec_params": decode_path_fr_vec_params}, skip_duplicates=True)
+
+        # Decode correct vs. incorrect on all previous trials
+        decode_path_fr_vec_param_name = "SVC_previous_correct_incorrect_loocv"
+        decode_path_fr_vec_params = {
+            "classifier_name": "SVC", "decode_var": "previous_correct_incorrect",
+            "path_fr_vec_param_name": "prev_correct_incorrect_trials", "cross_validation_method": "loocv",
             "cross_validation_always": True,
         }
         self.insert1(
@@ -94,10 +159,13 @@ class DecodePathFRVecSel(CovariateFRVecAveSelBase):
 
     def _get_potential_keys(self, key_filter=None, populate_tables=False):
 
-        key_filter = {"ppt_dig_param_name": "0.0625", "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0}
+        if key_filter is None:
+            key_filter = dict()
+
+        key_filter.update({"ppt_dig_param_name": "0.0625", "res_epoch_spikes_sm_param_name": "0.1", "zscore_fr": 0})
 
         potential_keys = []
-        for param_name, params in DecodePathFRVecParams().fetch():
+        for param_name, params in (DecodePathFRVecParams & key_filter).fetch():
             key_filter.update({"decode_path_fr_vec_param_name": param_name,
                           "path_fr_vec_param_name": params["path_fr_vec_param_name"]})
             potential_keys += super()._get_potential_keys(key_filter, populate_tables)
@@ -108,7 +176,7 @@ class DecodePathFRVecSel(CovariateFRVecAveSelBase):
         delete_(self, [DecodePathFRVec], key, safemode)
 
     def _get_cov_fr_vec_param_names(self):
-        return ["correct_incorrect_stay_trials"]
+        return ["correct_incorrect_trials", "correct_incorrect_stay_trials", "prev_correct_incorrect_trials"]
 
     @staticmethod
     def _fr_vec_table():
@@ -196,7 +264,8 @@ class DecodeCovFRVecSummSecKeyParamsBase(PopulationAnalysisParamsBase):
                         meta_param_name: param_name, "brain_region_units_cohort_type": brain_region_units_cohort_type})
 
     def _boot_set_names(self):
-        return super()._boot_set_names() + self._valid_brain_region_diff_boot_set_names()
+        return super()._boot_set_names() + self._valid_brain_region_diff_boot_set_names() \
+               + ["relationship_div_median", "relationship_div_rat_cohort_median"]
 
     def get_params(self):
         return self.fetch1(unpack_single_element(get_table_secondary_key_names(self)))
@@ -281,15 +350,48 @@ class DecodePathFRVecSumm(DecodeCovFRVecSummBase):
         return [0, 1]
 
     def _get_xticks(self):
-        return [0, .5, 1]
-
-    def _get_val_lims(self, **kwargs):
-        # Get a set range for value, e.g. for use in plotting value on same range across plots
-        params_table = self._get_params_table()()
-        boot_set_name = self.get_upstream_param("boot_set_name")
-        if boot_set_name in params_table._valid_brain_region_diff_boot_set_names():
-            return [-.5, .5]
-        return [0, 1]
+        return self._get_x_lims()
 
     def _get_x_text(self):
         return "Path fraction"
+
+    def extend_plot_results(self, **kwargs):
+
+        super().extend_plot_results(**kwargs)
+
+        if not kwargs["empty_plot"]:
+
+            ax = kwargs["ax"]
+
+            # Vertical lines to denote track segments
+            plot_junction_fractions(ax)
+
+            # Colored patches to denote task phase
+            from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_task_period_color_map
+            task_period_color_map = get_task_period_color_map()
+
+            xlims = ax.get_xlim()
+            x_start = xlims[0]
+            x_extent = xlims[1] - xlims[0]
+            ylims = ax.get_ylim()
+            y_start = ylims[1]
+            y_extent = (ylims[1] - ylims[0])*.1
+            color = task_period_color_map["path traversal"]
+            from matplotlib.patches import Rectangle
+            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+            # ...Update y lims
+            ax.set_ylim([ylims[0], ylims[1] + y_extent])
+
+            # Line at chance
+            # ...get decode variable
+            key = self.fetch1("KEY")
+            upstream_params = (self._upstream_table()()._get_params_table() & key).get_params()
+            decode_var = upstream_params["decode_var"]
+            boot_set_name = (self._get_params_table() & key).get_params()["boot_set_name"]
+            if decode_var in ["path_progression"] and boot_set_name in ["default", "default_rat_cohort"]:
+                valid_bin_nums = (PptDigParams & self.fetch1()).get_valid_bin_nums()
+
+                y_val = 1/len(valid_bin_nums)
+                plot_spanning_line(ax.get_xlim(), y_val, ax, "x", color="black")
+

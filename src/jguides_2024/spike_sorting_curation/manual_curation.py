@@ -64,13 +64,14 @@ def _convert_curation_spreadsheet_dtype(row, column_name):
     return row
 
 
-def get_curation_spreadsheet_notes(subject_id, date, sort_description, tolerate_no_notes=True):
+def get_curation_spreadsheet_notes(subject_id, date, sort_description, curation_version, tolerate_no_notes=True):
     """
     Get google spreadsheet with manual curation notes
     :param subject_id: str, name of subject
     :param date: str, date in the form YYYYMMDD where YYYY corresponds to the year, MM corresponds to the month, and
     DD corresponds to the day
     :param sort_description: str, description of the spike sorting
+    :param curation_version: str, v2 or v3 currently supported
     :param tolerate_no_notes: bool, True to tolerate notes not existing, False to raise error if no notes
     :return: pandas df with merge labels
     :return: pandas df with merge labels
@@ -83,7 +84,12 @@ def get_curation_spreadsheet_notes(subject_id, date, sort_description, tolerate_
     service_account_json = "frank-lab-jupyter-01e1afefcf28.json"
 
     # Define key to spreadsheet
-    spreadsheet_key = "1GKyg4Apwwk6kd48_tuyBC5fI_reE8Gn9pRQ9J0X7hfo"
+    if curation_version == "v2":
+        spreadsheet_key = "1GKyg4Apwwk6kd48_tuyBC5fI_reE8Gn9pRQ9J0X7hfo"
+    elif curation_version == "v3":
+        spreadsheet_key = "1WEwkIGHfzcpvT30ySAHAk_xWc3f9rT-SbInx5Qsa_Ck"
+    else:
+        raise Exception(f"spreadsheet_key {spreadsheet_key} not recognized")
 
     # Define names of columns in spreadsheet to retrieve
     column_names = np.asarray([
@@ -192,7 +198,10 @@ def load_curation_data(
 
         # Continue if data doesnt exist
         if not os.path.exists(file_name_save):
+            print(f"No data for {file_name_save}, skipping...")
             continue
+        else:
+            print(f"Loading {file_name_save}...")
 
         # Otherwise store sort group data
         sort_groups_data[sort_group_id] = pickle.load(open(file_name_save, "rb"))
@@ -369,6 +378,11 @@ def make_curation_data(
                 # Get amplitude size comparison
                 data_subset["amplitude_size_comparisons"] = get_amplitude_size_comparisons(data_subset)
 
+                # Get max cosine similarity across waveforms shifts
+                if verbose:
+                    print(f"Getting max cosine similarity across waveform shifts...")
+                data_subset["max_cosine_similarities"] = get_max_shift_cosine_similarities(data_subset["average_waveforms"])
+
                 # Get cosine similarity
                 if verbose:
                     print(f"Getting cosine similarities...")
@@ -468,7 +482,7 @@ def make_curation_data_wrapper(subject_ids,
 
 
 def label_units(subject_id, date, targeted_location, sort_description, sort_interval_name, curation_id=1,
-                label_col_name="label_1", verbose=True):
+                label_col_name="label_1", curation_version="v3", verbose=True):
 
     # Define directory to save data in
     save_dir = f"/cumulus/jguidera/curation_data/{subject_id}/"
@@ -490,7 +504,7 @@ def label_units(subject_id, date, targeted_location, sort_description, sort_inte
         verbose=verbose)
 
     # Get curation merge notes
-    curation_merge_notes, unit_notes = get_curation_spreadsheet_notes(subject_id, date, sort_description)
+    curation_merge_notes, unit_notes = get_curation_spreadsheet_notes(subject_id, date, sort_description, curation_version)
 
     # Label units
     # Initialize all units to accept / no merge, then fill in changes
@@ -636,6 +650,32 @@ def _compute_cosine_similarity(wv_avg_1, wv_avg_2):
     wv_avg_nrm_1, wv_avg_nrm_2 = (wv_avg / np.linalg.norm(wv_avg, axis=0) for wv_avg in (wv_avg_1, wv_avg_2))
     sim = np.dot(wv_avg_nrm_1, wv_avg_nrm_2)
     return sim
+
+
+def _compute_max_shift_cosine_similarity(wv_avg_1, wv_avg_2):
+    wv_avg_1, wv_avg_2 = (np.ravel(wv_avg) for wv_avg in (wv_avg_1, wv_avg_2))
+
+    # Define number of shifts on either side
+    shift = 10  # samples
+
+    sims = []
+    for i in np.arange(-shift, shift + 1):
+        if i == 0:
+            wv_avg_1_ = wv_avg_1
+            wv_avg_2_ = wv_avg_2
+        elif i < 0:
+            i *= -1
+            wv_avg_1_ = wv_avg_1[:-i]
+            wv_avg_2_ = wv_avg_2[i:]
+        elif i > 0:
+            wv_avg_1_ = wv_avg_1[i:]
+            wv_avg_2_ = wv_avg_2[:-i]
+        wv_avg_nrm_1, wv_avg_nrm_2 = (wv_avg / np.linalg.norm(wv_avg, axis=0) for wv_avg in (wv_avg_1_, wv_avg_2_))
+        sims.append(np.dot(wv_avg_nrm_1, wv_avg_nrm_2))
+
+    max_sim = np.max(sims)
+
+    return max_sim
 
 
 def get_correlogram_default_params():
@@ -814,6 +854,10 @@ def get_amplitude_size_comparisons(data):
 
 def get_cosine_similarities(average_waveforms):
     return _compute_pairwise_cluster_data(_compute_cosine_similarity, average_waveforms)
+
+
+def get_max_shift_cosine_similarities(average_waveforms):
+    return _compute_pairwise_cluster_data(_compute_max_shift_cosine_similarity, average_waveforms)
 
 
 # Get correlograms using multiprocessing
@@ -1323,7 +1367,7 @@ def plot_average_waveforms_wrapper(cluster_data, sort_group_unit_ids=None, subpl
     # Get inputs if not passed
     if sort_group_unit_ids is None:
         sort_group_unit_ids = np.concatenate(
-            [[(sort_group_id, unit_id) for unit_id in vals["whitened"]["waveforms"].keys()]
+            [[(sort_group_id, unit_id) for unit_id in vals["whitened"]["average_waveforms"].keys()]
              for sort_group_id, vals in cluster_data["sort_groups"].items() if "whitened" in vals])
 
     # Plot waveforms for multiple units

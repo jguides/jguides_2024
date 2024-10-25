@@ -55,7 +55,7 @@ def format_ax(ax,
     :param xticks: list. x ticks.
     :param xticklabels: list. x tick labels.
     :param xticklabels_rotation: float, rotation of x tick labels in degrees
-    :param ticklabels_fontsize: float, font size for x tick labels
+    :param ticklabels_fontsize: float, font size for tick labels
     :param yticks: list. y ticks.
     :param yticklabels: list. y tick labels.
     :param zticks: list. z ticks.
@@ -370,7 +370,8 @@ def plot_spanning_line(
 
 
 def path_name_to_plot_string(path_name):
-    well1, well2 = path_name.split("_to_")
+    from src.jguides_2024.position_and_maze.jguidera_maze import RewardWellPath
+    well1, well2 = path_name.split(RewardWellPath._join_well_char())
     return f"{well1.split('_well')[0]}-{well2.split('_well')[0]}"
 
 
