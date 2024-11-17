@@ -8,7 +8,7 @@ from src.jguides_2024.utils.check_well_defined import check_one_none
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import format_nwb_file_name
 from src.jguides_2024.utils.df_helpers import df_filter_columns_isin, zip_df_columns
 from src.jguides_2024.utils.dict_helpers import dict_comprehension
-from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_subject_ids
+from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_subject_ids, get_delay_duration
 from src.jguides_2024.datajoint_nwb_utils.nwbf_helpers import subject_id_date_from_nwbf_name
 from src.jguides_2024.utils.plot_helpers import plot_spanning_line
 from src.jguides_2024.utils.set_helpers import check_membership
@@ -166,6 +166,64 @@ def plot_well_events(
         span_data = ax.get_ylim()
     for well_event_time in np.asarray([0, 2])*x_scale_factor + shift_x:
         plot_spanning_line(span_data, well_event_time, ax, "y", linewidth, color, linestyle, alpha, zorder)
+
+
+def plot_task_phases(ax, axis_type):
+
+    # Plot rectangles denoting task phase
+
+    from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_task_period_color_map
+    from matplotlib.patches import Rectangle
+
+    task_period_color_map = get_task_period_color_map()
+
+    xlims = ax.get_xlim()
+    x_start = xlims[0]
+    x_extent = xlims[1] - xlims[0]
+    ylims = ax.get_ylim()
+    y_start = ylims[1]
+    y_extent = (ylims[1] - ylims[0]) * .1
+
+    if axis_type == "path_progression":
+
+        color = task_period_color_map["path traversal"]
+        ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+    elif axis_type == "time_in_delay":
+
+        # Path traversal
+        xlims = ax.get_xlim()
+        x_start = xlims[0]
+        x_extent = 0 - xlims[0]
+        ylims = ax.get_ylim()
+        y_start = ylims[1]
+        y_extent = (ylims[1] - ylims[0]) * .1
+        color = task_period_color_map["path traversal"]
+        from matplotlib.patches import Rectangle
+        if x_extent > 0:
+            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+        # Delay
+        x_start = 0
+        x_extent = get_delay_duration()
+        color = task_period_color_map["delay"]
+        ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+        # Post delay
+        x_start = 2
+        x_extent = xlims[1] - x_start
+        color = task_period_color_map["post delay"]
+        if x_extent > 0:
+            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
+
+    else:
+        raise Exception(f"axis_type {axis_type} not recognized")
+
+    # Update y lims
+    ax.set_ylim([ylims[0], ylims[1] + y_extent])
+
+    # Truncate y axis spine at original y limits
+    ax.spines["left"].set_bounds(*ylims)
 
 
 def key_text(key, separating_character="_"):

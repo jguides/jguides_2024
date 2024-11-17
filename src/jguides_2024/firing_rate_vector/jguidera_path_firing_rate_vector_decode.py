@@ -1,7 +1,7 @@
 import datajoint as dj
 import spyglass as nd
 
-from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import plot_junction_fractions
+from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import plot_junction_fractions, plot_task_phases
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_decode_table_base import \
     DecodeCovFRVecBase, DecodeCovFRVecParamsBase, DecodeCovFRVecSelBase, DecodeCovFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
@@ -367,21 +367,7 @@ class DecodePathFRVecSumm(DecodeCovFRVecSummBase):
             plot_junction_fractions(ax)
 
             # Colored patches to denote task phase
-            from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_task_period_color_map
-            task_period_color_map = get_task_period_color_map()
-
-            xlims = ax.get_xlim()
-            x_start = xlims[0]
-            x_extent = xlims[1] - xlims[0]
-            ylims = ax.get_ylim()
-            y_start = ylims[1]
-            y_extent = (ylims[1] - ylims[0])*.1
-            color = task_period_color_map["path traversal"]
-            from matplotlib.patches import Rectangle
-            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
-
-            # ...Update y lims
-            ax.set_ylim([ylims[0], ylims[1] + y_extent])
+            plot_task_phases(ax, "path_progression")
 
             # Line at chance
             # ...get decode variable

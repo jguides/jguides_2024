@@ -1379,7 +1379,7 @@ def get_table_curation_names_for_key(table, key):
 
 
 # TODO (feature): move to class
-def get_boot_params(boot_set_name):
+def get_boot_params(boot_set_name, bonferroni_num_tests=None):
     # Return parameters for bootstrapping
 
     if boot_set_name in [
@@ -1393,15 +1393,22 @@ def get_boot_params(boot_set_name):
     ]:
         num_bootstrap_samples = 1000
         average_fn = np.mean
-        alphas = (.05, .01, .001, .0001)
+        alphas = (.05, .01, .001, .0001, .00001, .000001, .0000001, .00000001)
 
     elif boot_set_name in ["relationship_div_median", "relationship_div_rat_cohort_median"]:
         num_bootstrap_samples = 1000
         average_fn = np.median
-        alphas = (.05, .01, .001, .0001)
+        alphas = (.05, .01, .001, .0001, .00001, .000001, .0000001, .00000001)
 
     else:
         raise Exception(f"boot_set_name {boot_set_name} not accounted for in code")
+
+    # Add bonferroni corrected value (with significance level of 0.05) if indicated
+    if bonferroni_num_tests is not None:
+        alpha = 0.05/bonferroni_num_tests
+        alphas = list(alphas)
+        alphas.append(alpha)
+        alphas = tuple(np.sort(alphas))
 
     return namedtuple("boot_params", "num_bootstrap_samples average_fn alphas")(
             num_bootstrap_samples, average_fn, alphas)

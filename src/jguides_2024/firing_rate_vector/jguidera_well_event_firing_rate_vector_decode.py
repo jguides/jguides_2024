@@ -2,6 +2,7 @@ import datajoint as dj
 import spyglass as nd
 import numpy as np
 
+from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import plot_task_phases
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_decode_table_base import \
     DecodeCovFRVecParamsBase, DecodeCovFRVecBase, DecodeCovFRVecSelBase, DecodeCovFRVecSummBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
@@ -372,36 +373,7 @@ class DecodeTimeRelWAFRVecSumm(DecodeCovFRVecSummBase):
             ax = kwargs["ax"]
 
             # Colored patches to denote task phase
-            from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_task_period_color_map
-            task_period_color_map = get_task_period_color_map()
-
-            # ...Path traversal
-            xlims = ax.get_xlim()
-            x_start = xlims[0]
-            x_extent = 0 - xlims[0]
-            ylims = ax.get_ylim()
-            y_start = ylims[1]
-            y_extent = (ylims[1] - ylims[0]) * .1
-            color = task_period_color_map["path traversal"]
-            from matplotlib.patches import Rectangle
-            if x_extent > 0:
-                ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
-
-            # ...Delay
-            x_start = 0
-            x_extent = get_delay_duration()
-            color = task_period_color_map["delay"]
-            ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
-
-            # ...Post delay
-            x_start = 2
-            x_extent = xlims[1] - x_start
-            color = task_period_color_map["post delay"]
-            if x_extent > 0:
-                ax.add_patch(Rectangle((x_start, y_start), x_extent, y_extent, color=color))
-
-            # ...Update y lims
-            ax.set_ylim([ylims[0], ylims[1] + y_extent])
+            plot_task_phases(ax, "time_in_delay")
 
             # Line at chance
             # ...get decode variable

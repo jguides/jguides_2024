@@ -107,9 +107,9 @@ def get_fr_vec_default_params_map():
 
     time_bins_shorthand = "epoch_100ms"
     res_time_bins_pool_param_name = ResTimeBinsPoolSel().lookup_param_name_from_shorthand(time_bins_shorthand)
-    time_rel_wa_dig_single_axis_param_name = TimeRelWADigSingleAxisParams().lookup_param_name([0, 2])
+    time_rel_wa_dig_single_axis_param_name = TimeRelWADigSingleAxisParams().lookup_param_name([-1, 3])
     res_epoch_spikes_sm_param_name = ResEpochSpikesSmParams().lookup_param_name([.1])
-    ppt_dig_param_name = PptDigParams().lookup_param_name([.05])
+    ppt_dig_param_name = PptDigParams().lookup_param_name([.0625])
 
     return {"time_bins_shorthand": time_bins_shorthand, "res_time_bins_pool_param_name": res_time_bins_pool_param_name,
             "res_epoch_spikes_sm_param_name": res_epoch_spikes_sm_param_name,

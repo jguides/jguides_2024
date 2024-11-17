@@ -3,6 +3,7 @@ from collections import namedtuple
 
 import datajoint as dj
 import numpy as np
+import pandas as pd
 import spyglass as nd
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
@@ -11,7 +12,6 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
     CovariateFRVecSelBase, CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
     CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, PathFRVecSummBase, \
     CovariateFRVecParamsBase
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
@@ -19,8 +19,9 @@ from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector import FRVe
     populate_jguidera_firing_rate_vector
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionCohort, CurationSet
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RunEpoch, RecordingSet
-from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
-from src.jguides_2024.position_and_maze.jguidera_ppt import PptParams
+from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell, get_n_junction_path_junction_fractions
+from src.jguides_2024.position_and_maze.jguidera_position import IntervalPositionInfoRelabel
+from src.jguides_2024.position_and_maze.jguidera_ppt import PptParams, Ppt
 from src.jguides_2024.position_and_maze.jguidera_ppt_interp import PptDig, populate_jguidera_ppt_interp, \
     PptDigParams
 from src.jguides_2024.spikes.jguidera_res_spikes import ResEpochSpikesSmParams
@@ -28,6 +29,7 @@ from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, BrainRegionU
     BrainRegionUnitsCohortType
 from src.jguides_2024.task_event.jguidera_dio_trials import DioWellTrials, DioWellDDTrials
 from src.jguides_2024.time_and_trials.jguidera_res_time_bins_pool import ResTimeBinsPoolSel
+from src.jguides_2024.utils.df_helpers import df_filter_columns_isin
 from src.jguides_2024.utils.dict_helpers import make_keys
 from src.jguides_2024.utils.point_process_helpers import event_times_in_intervals_bool
 from src.jguides_2024.utils.state_evolution_estimation import AverageVectorDuringLabeledProgression
@@ -56,10 +58,32 @@ class PathFRVecParams(CovariateFRVecParamsBase):
     labels_description = "none" : varchar(40)  # indicate how to alter labels from their original form (e.g. split path label in even / odd trials on the path)
     """
 
+    @staticmethod
+    def _get_low_speed_params(param_name):
+        split1 = param_name.split("_ppt_")
+        speed_threshold = float(split1[0].split("low_speed_")[1])
+        min_ppt, max_ppt = split1[1].split("_")
+        min_ppt = float(min_ppt)
+        max_ppt = float(max_ppt)
+        return {"speed_threshold": speed_threshold, "min_ppt": min_ppt, "max_ppt": max_ppt}
+
+    @staticmethod
+    def _get_low_speed_param_name(speed_threshold, min_ppt, max_ppt):
+        return f"low_speed_{speed_threshold}_ppt_{min_ppt}_{max_ppt}"
+
     def _default_params(self):
-        return [[x] for x in [
+        param_names = [
             "none", "even_odd_trials", "correct_incorrect_stay_trials", "correct_incorrect_trials",
-            "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials"]]
+            "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials"]
+
+        # Add param name for low speed trials
+        junction_fractions = get_n_junction_path_junction_fractions(2)
+        min_ppt = .2
+        max_ppt = junction_fractions[0]
+        speed_threshold = 5  # cm/s
+        param_names.append(self._get_low_speed_param_name(speed_threshold, min_ppt, max_ppt))
+
+        return [[x] for x in param_names]
 
     # Drop dependent tables and avoid error related to attempt to
     # drop part table before main table
@@ -118,6 +142,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
             "none", "even_odd_trials", "correct_incorrect_trials", "correct_incorrect_stay_trials",
             "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials",
         ]
+        primary_zscore_fr = [0, 1]
         primary_kernel_sds_2 = [.1]
 
         # Define nwb file names
@@ -173,11 +198,13 @@ class PathFRVecSel(CovariateFRVecSelBase):
                             nwb_file_name, epoch, min_epoch_mean_firing_rate, **unit_params_2)
                         key.update({
                             "epoch": epoch, "brain_region_units_param_name": brain_region_units_param_name})
-                        for path_fr_vec_param_name in primary_path_fr_vec_param_names_2:
-                            for kernel_sd in primary_kernel_sds_2:
-                                k = {"res_epoch_spikes_sm_param_name": ResEpochSpikesSmParams().lookup_param_name(
-                                    [kernel_sd]), "path_fr_vec_param_name": path_fr_vec_param_name}
-                                keys.append({**primary_features_2, **key, **k})
+                        for zscore_fr in primary_zscore_fr:
+                            for path_fr_vec_param_name in primary_path_fr_vec_param_names_2:
+                                for kernel_sd in primary_kernel_sds_2:
+                                    k = {"zscore_fr": zscore_fr,
+                                         "res_epoch_spikes_sm_param_name": ResEpochSpikesSmParams().lookup_param_name(
+                                        [kernel_sd]), "path_fr_vec_param_name": path_fr_vec_param_name}
+                                    keys.append({**primary_features_2, **key, **k})
 
         print(f"\nDefined {len(keys)} potential keys, now restricting to those with matches in upstream tables...\n")
 
@@ -271,7 +298,61 @@ class PathFRVec(CovariateFRVecBase):
         # Return updated labels and boolean indicating labels that are associated with stay or leave trials
         return labels, in_intervals_bool_map
 
-    def get_inputs(self, key, verbose=False, ax=None):
+    @staticmethod
+    def alter_input_labels_low_speed(labels, key):
+        # Add to labels whether time is "associated" with "low speed" trial (speed below a given threshold on the
+        # trial in which time is in)
+
+        in_intervals_bool_map = dict()  # store booleans indicating whether samples in low speed or non-low speed trials
+
+        outbound_path_names = MazePathWell.get_outbound_path_names(key["nwb_file_name"], key["epoch"])
+        ppt_df = (Ppt & key).fetch1_dataframe()
+        ppt_df_subset = df_filter_columns_isin(ppt_df, {"trials_path_name": outbound_path_names})
+
+        low_speed_params = PathFRVecParams()._get_low_speed_params(key["path_fr_vec_param_name"])
+
+        key = copy.deepcopy(key)
+        key.update({"position_info_param_name": "default"})
+        pos_df = (IntervalPositionInfoRelabel.RelabelEntries & key).fetch1_dataframe()
+        speed = pos_df["head_speed"]
+
+        low_speed_epoch_trial_nums = []
+        for _, df_row in ppt_df_subset.iterrows():
+            valid_bool = np.where(np.logical_and(
+                df_row.trials_ppt > low_speed_params["min_ppt"], df_row.trials_ppt < low_speed_params["max_ppt"]))[0]
+
+            trials_time_subset = df_row.trials_time[valid_bool]
+
+            trial_start = trials_time_subset[0]
+            trial_stop = trials_time_subset[-1]
+
+            speed_threshold = 5 # low_speed_params["speed_threshold"]
+            valid_bool = np.where(np.logical_and.reduce((
+                speed.index > trial_start, speed.index < trial_stop, speed < speed_threshold)))[0]
+
+            if np.sum(valid_bool) > 0:
+                low_speed_epoch_trial_nums.append(df_row.trial_start_epoch_trial_numbers)
+
+        if not isinstance(labels, pd.Series):
+            raise Exception(f"labels must be a series but is {type(labels)}")
+
+        # Get trial end epoch trial numbers over time as series
+        epoch_trial_numbers = (DioWellDDTrials & key).label_time_vector(
+            labels.index, ["trial_start_epoch_trial_numbers"])["trial_start_epoch_trial_numbers"]
+
+        valid_bool = epoch_trial_numbers.isin(low_speed_epoch_trial_nums) == True
+
+        # Add text to labels in low speed trials
+        for label_name, valid_bool in zip(["low_speed_trial", "non_low_speed_trial"], [valid_bool, np.invert(valid_bool)]):
+            labels.loc[valid_bool] = [
+                MazePathWell().get_low_speed_trial_label_name(x, label_name)
+                for x in labels[valid_bool].values]
+            # Store boolean
+            in_intervals_bool_map[label_name] = valid_bool
+
+        return labels, in_intervals_bool_map
+
+    def get_inputs(self, key, verbose=True, ax=None):
 
         # Get firing rate vectors
         fr_vec_df = (FRVec & key).firing_rate_vector_across_sort_groups(populate_tables=False)
@@ -336,11 +417,14 @@ class PathFRVec(CovariateFRVecBase):
             ppt_dig_df = ppt_dig_df[valid_bool]
             fr_vec_df = fr_vec_df[valid_bool]
 
+        elif "low_speed" in labels_description:
+            labels, _ = self.alter_input_labels_low_speed(labels, key)
+
         elif labels_description == "none":
             pass
 
         else:
-            raise Exception
+            raise Exception(f"labels description {labels_description} not accounted for")
 
         # Plot labels again, now that have altered (if indicated)
         self._plot_labels("post", labels, verbose, ax)
@@ -406,7 +490,7 @@ class PathFRVecSTAveSel(PathFRVecAveSelBase):
         delete_(self, [PathFRVecSTAve], key, safemode)
 
     def _get_cov_fr_vec_param_names(self):
-        return ["none", "correct_incorrect_trials"]
+        return ["none", "correct_incorrect_stay_trials"]
 
 
 # Overrides methods in CovariateFRVecAveBase in a manner specific to path covariate and invariant to trial averaged
@@ -545,6 +629,7 @@ class PathFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
 
 @schema
 class PathFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
+# class PathFRVecSTAveSummSel(dj.Manual):  # use to initialize table
     definition = """
     # Selection from upstream tables for PathFRVecSTAveSumm
     -> RecordingSet
@@ -560,10 +645,12 @@ class PathFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
     -> PathFRVecSTAveSummParams
     ---
     upstream_keys : mediumblob
+    -> nd.common.AnalysisNwbfile
+    df_concat_object_id : varchar(40)
     """
 
     def _default_cov_fr_vec_param_names(self):
-        return ["none", "correct_incorrect_trials"]
+        return ["none", "correct_incorrect_trials", "low_speed_5_ppt_0.2_0.3887090246863618"]
 
     def _default_noncohort_boot_set_names(self):
         return super()._default_noncohort_boot_set_names() + [
@@ -589,6 +676,7 @@ class PathFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
 
 @schema
 class PathFRVecSTAveSumm(CovariateFRVecSTAveSummBase, PathFRVecSummBase):
+# class PathFRVecSTAveSumm(dj.Computed):  # use to initialize table
     definition = """
     # Summary of single 'trial' comparison of firing rate vectors
     -> PathFRVecSTAveSummSel
@@ -601,8 +689,8 @@ class PathFRVecSTAveSumm(CovariateFRVecSTAveSummBase, PathFRVecSummBase):
 
     class Upstream(dj.Part):
         definition = """
-        # Achieves upstream dependence on upstream tables
-        -> PathFRVecSTAveSumm
+        # Achieves dependence on upstream tables
+        -> PathFRVecSTAveSummSel
         -> BrainRegionCohort
         -> CurationSet
         -> PathFRVecSTAve

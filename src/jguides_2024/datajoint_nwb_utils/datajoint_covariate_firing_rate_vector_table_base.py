@@ -100,7 +100,7 @@ def get_metadata(metric_name, vector_type):
         raise Exception(f"No case coded for metric name {metric_name} and vector type {vector_type}")
 
 
-class CovariateFRVecParamsBase(ParamsBase):
+class CovariateFRVecParamsBase(SecKeyParamsBase):
     """Base class for firing rate vector as a function of a covariate params table"""
 
     def get_labels_description(self):
@@ -597,6 +597,18 @@ def _get_vector_df(table, entry_key, store_key_names):
     return metadata_vals + [dfs]
 
 
+def _get_df(table, entry_key, store_key_names):
+    df = (table & entry_key).fetch1_dataframe()
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [df]
+
+
+def _get_same_diff_x_ratio_df(table, entry_key, store_key_names):
+    df = (table & entry_key).get_same_diff_x_ratio_df()
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [df]
+
+
 def _default_metric_vector_type():
 
     return [["cosine_similarity", "diff_vec"],
@@ -998,9 +1010,12 @@ class CovariateFRVecAveBase(ComputedBase):
         meta_param_name = self.get_cov_fr_vec_meta_param_name()
         cov_fr_vec_param_name = copy.deepcopy(kwargs).pop(meta_param_name, None)
 
+        if cov_fr_vec_param_name is None:
+            cov_fr_vec_param_name = self.fetch1(meta_param_name)
+
         # Make key for querying params table
         params_table_key = {meta_param_name: cov_fr_vec_param_name}
-        return (self.get_cov_fr_vec_params_table()() & params_table_key).get_labels_description()
+        return (self.get_cov_fr_vec_params_table() & params_table_key).get_labels_description()
 
     def _get_df_outer_loop(self, inner_fn, nwb_file_names, epochs_descriptions_names, verbose,
                            res_epoch_spikes_sm_param_name, zscore_fr,
@@ -1273,7 +1288,7 @@ class CovariateFRVecAveBase(ComputedBase):
         valid_labels = MazePathWell().get_rewarded_path_names_across_epochs(key["nwb_file_name"], valid_epochs, True)
 
         # ...Update labels with correct/incorrect, even/odd, etc. based on labels_description
-        valid_labels = self._get_params_table()().update_labels(valid_labels)
+        valid_labels = (self._fr_vec_table()()._get_params_table()() & key).update_labels(valid_labels)
 
         # ...Get boolean indicting valid labels
         valid_labels_bool = np.logical_and(diag_ratio_df["label_1"].isin(valid_labels),
@@ -1304,7 +1319,10 @@ class CovariateFRVecAveBase(ComputedBase):
 
         # ...Add label relationships
         valid_epochs, pairs_map = self._get_label_relationship_inputs()
-        valid_relationships = kwargs["relationships"]  # potential relationships
+        if "relationships" not in kwargs:
+            valid_relationships = self.get_default_relationships()
+        else:
+            valid_relationships = kwargs["relationships"]  # potential relationships
         # check that epochs same; current code assumes this
         if not all(df.epoch_1 == df.epoch_2):
             raise Exception(f"Code currently only set up for case where epoch_1 equals epoch_2")
@@ -1345,6 +1363,44 @@ class CovariateFRVecAveBase(ComputedBase):
             raise Exception(f"within get_same_diff_x_ratio_df. No entries left in df; this is unexpected")
 
         return df
+
+    def get_df_across_entries(self, keys=None, fn=_get_df, store_key_names=None, use_multiprocessing=True, **kwargs):
+
+        if use_multiprocessing:
+            import multiprocessing as mp
+            from src.jguides_2024.utils.parallelization_helpers import show_error
+
+        if keys is None:
+            raise Exception(f"Not yet coded")
+
+        data_list = []
+
+        if store_key_names is None:
+            store_key_names = [
+                "subject_id", "nwb_file_name", "epoch", "brain_region_units_param_name", "brain_region"]
+
+        for key in keys:
+            check_membership(store_key_names, key)
+
+        def append_result(x):
+            data_list.append(x)
+
+        if use_multiprocessing:
+            pool = mp.Pool(mp.cpu_count())
+
+            for key in keys:
+                pool.apply_async(
+                    fn, args=(self, key, store_key_names), callback=append_result, error_callback=show_error)
+
+            pool.close()
+            pool.join()  # waits until all processes done before running next line
+
+        else:
+            for key_idx, key in enumerate(keys):
+                print_iteration_progress(key_idx, len(keys), 20)
+                data_list.append(fn(self, key, store_key_names))
+
+        return df_from_data_list(data_list, store_key_names + ["df"])
 
     def _get_plot_color(self):
         # Get color based on brain region
@@ -1556,7 +1612,7 @@ class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
         # Get relationships depending on labels description
 
         # Get labels description
-        labels_description = self.get_labels_description(kwargs)
+        labels_description = self.get_labels_description(**kwargs)
 
         # Stay/leave trials by path
         if labels_description in ["stay_leave_trials", "stay_leave_trials_pre_departure"]:
@@ -1924,6 +1980,7 @@ class PathWellPopSummBase(ComputedBase):
             "CA1_targeted_mPFC_targeted", "mPFC_targeted_CA1_targeted"]
         relationship_vals_list = [[
             # Darkest tint
+            "none",
             "same_path", "same_path_stay_stay_trials", "same_path_correct_correct_trials",
             "same_path_correct_correct_stay_trials",
             "same_path_stay_stay_trials_same_path_stay_stay_trials",
@@ -1931,11 +1988,15 @@ class PathWellPopSummBase(ComputedBase):
             "same_path_leave_leave_trials_same_path_stay_stay_trials",
             "outbound_correct_correct_stay_trials",
 
+            "same_path_stay_leave_trials",
+
             "same_path_correct_incorrect_stay_trials",
+
+            "same_path_prev_correct_incorrect_trials",
 
         ], [
             # Medium tint
-            "same_path_stay_leave_trials", "same_path_correct_incorrect_trials",
+            "same_path_correct_incorrect_trials",
             "same_turn_correct_correct_stay_trials"
         ], [
 
@@ -2253,11 +2314,21 @@ class PathWellPopSummBase(ComputedBase):
                                 x_val_type).val, linewidth=.5, linestyle=linestyle, color=color, zorder=10,
                                     alpha=line_alpha)
 
-        # If brain region difference for one pair of brain regions, add rectangles to denote brain region colors
+        # If brain region difference for one pair of brain regions, 1) add rectangles to denote brain region colors
+        # and 2) add black bar to denote significance
         if len(brain_region_vals) == 1 and brain_region_meta_name == "joint_brain_region" and not empty_plot:
+
+            # Get brain region pair name
             brain_region_val = unpack_single_element(brain_region_vals)
+
+            # Get subset of df with brain region pair name
             df_subset = df_filter_columns(ave_conf_df, {brain_region_meta_name: brain_region_val})
+
+            # Proceed if data
             if len(df_subset) > 0:
+
+                # 1) Add rectangles to denote brain region colors
+                # Get brain regions
                 brain_regions = [check_return_single_element(df_subset[x].values).single_element for x in [
                     "brain_region_1", "brain_region_2"]]
                 if ylim is None:
@@ -2273,6 +2344,76 @@ class PathWellPopSummBase(ComputedBase):
                     color = BrainRegionColor().get_brain_region_color(brain_region)
                     ax.add_patch(patches.Rectangle(
                         [xlim[0], y_start], np.diff(xlim), y_end - y_start, facecolor=color, alpha=.3, zorder=10))
+
+                # 2) Add markers to denote significance
+
+                alpha = 0.05
+                bonferroni_val = alpha/len(set(df_subset.x_val))
+
+                y_vals = [.8, .9]
+
+                for sig_val, color, y_scale_factor in zip(
+                        [alpha, bonferroni_val], ["black", "gray"], y_vals):
+
+                    df_key = {"alpha": sig_val, "joint_brain_region": unpack_single_element(brain_region_vals)}
+
+                    if relationship_vals is not None:
+                        relationship_val = unpack_single_element(relationship_vals)
+                        df_key.update({relationship_meta_name: relationship_val})
+
+                    ave_conf_df_subset = df_filter_columns(df_subset, df_key).set_index("x_val").sort_index()
+
+                    # Define y value
+                    y_val = ylim[1]*y_scale_factor
+
+                    # Check all indxs unique
+                    check_all_unique(ave_conf_df_subset.index.values)
+
+                    # Get ranges where significant difference
+                    significant_idxs = np.where(ave_conf_df_subset.significant)[0]
+                    significant_spans, _ = find_spans_increasing_list(significant_idxs)
+
+                    significant_spans_list = []
+                    for start_idx, stop_idx in significant_spans:
+
+                        if start_idx == stop_idx:
+                            # If only single point is significant, plot a line that extends a small way to the previous
+                            # x value and a small way to the next x value (otherwise nothing appears on plot, i.e.
+                            # line with zero extent does not appear)
+                            if start_idx == 0:
+                                x_start = ave_conf_df_subset.index[start_idx]
+                            else:
+                                x_start = ave_conf_df_subset.index[start_idx] - (
+                                    ave_conf_df_subset.index[start_idx] - ave_conf_df_subset.index[start_idx - 1])/10
+                            if stop_idx == len(ave_conf_df_subset) - 1:
+                                x_stop = ave_conf_df_subset.index[stop_idx]
+                            else:
+                                x_stop = ave_conf_df_subset.index[stop_idx] - (
+                                    ave_conf_df_subset.index[stop_idx] - ave_conf_df_subset.index[stop_idx + 1])/10
+                            x_vals = [x_start, x_stop]
+
+                            # Store significant x vals so can print
+                            significant_spans_list.append(ave_conf_df_subset.index[start_idx])
+
+                        else:
+                            # Define range
+                            x_vals = [ave_conf_df_subset.index[idx] for idx in [start_idx, stop_idx]]
+
+                            # Store significant x vals so can print
+                            significant_spans_list.append(x_vals)
+
+                        ax.plot(x_vals, [y_val]*2, color=color, linewidth=1.5)
+
+                    # Print significant values
+                    print(f"ALPHA: {sig_val}")
+                    print("SIGNIFICANT VALUES:")
+                    print(ave_conf_df_subset.index[significant_idxs].values)
+                    print("\n")
+
+                    # Print significant spans
+                    print("SIGNIFICANT SPANS:")
+                    print(significant_spans_list)
+                    print("\n")
 
         # If plot empty, remove axis if indicated
         if empty_plot and remove_axis_empty_plot:
@@ -2619,9 +2760,17 @@ class PathWellFRVecSummBase(PathWellPopSummBase):
         brain_regions_text = f"_{len(brain_region_vals)}areas"
 
         # Text to denote number of relationships
-        num_relationships = np.unique([len(key["relationship_vals"]) for key in keys])
-        if len(num_relationships) == 1:
-            relationships_text = f"_rel{num_relationships[0]}"
+        relationships_text = ""
+        relationship_vals = []
+        for key in keys:
+            if "relationship_vals" in key:
+                relationship_vals.append(key["relationship_vals"])
+        if len(relationship_vals) > 0:
+            num_relationships = np.unique([len(key["relationship_vals"]) for key in keys])
+            if len(num_relationships) == 1:
+                relationships_text = f"_rel{num_relationships[0]}"
+            else:
+                raise Exception(f"have not accounted for case with multiple numbers of relationships across keys")
 
         # Define map to abbreviate parts of param names so that can meet file name character limit
         replace_char_map = self._get_replace_char_map()
@@ -3443,8 +3592,8 @@ class PopulationAnalysisParamsBase(ParamsBase):
     def get_params(self):
         raise Exception(f"Must be overwritten in child class")
 
-    def get_boot_params(self):
-        return get_boot_params(self.get_params()["boot_set_name"])
+    def get_boot_params(self, bonferroni_num_tests):
+        return get_boot_params(self.get_params()["boot_set_name"], bonferroni_num_tests=bonferroni_num_tests)
 
 
 # TODO: if delete all tables relying on PopulationAnalysisSecKeyParamsBase, convert summ param tables to have
@@ -3506,7 +3655,7 @@ class PopulationAnalysisSelBase(SelBase):
         raise Exception(f"Must be defined in child class")
 
     # TODO (feature): limit search more fully with key_filter
-    def _get_potential_keys(self, key_filter=None, verbose=True, debug_mode=False):
+    def _get_potential_keys(self, key_filter=None, verbose=True, debug_mode=False, populate_tables=True):
 
         # Define key filter if not passed
         if key_filter is None:
@@ -3654,6 +3803,9 @@ class PopulationAnalysisSelBase(SelBase):
                                     if debug_mode:
                                         print(f"{populated_} {upstream_table.table_name} {upstream_key}")
                                         # Raise error so can investigate no entry
+                                        if populated_ is False and populate_tables:
+                                            upstream_table.populate(upstream_key)
+                                            populated_ = len(upstream_table & upstream_key) > 0
                                         if populated_ is False:
                                             raise Exception
 
@@ -3755,13 +3907,10 @@ class CovariateFRVecAveSummSelBase(PopulationAnalysisSelBase):
         if "cov_fr_vec_param_name" not in kwargs:
             cov_fr_vec_params_table = upstream_table._fr_vec_table()()._get_params_table()()
             cov_fr_vec_meta_param_name = cov_fr_vec_params_table.meta_param_name()
-            kwargs["cov_fr_vec_param_name"] = (cov_fr_vec_params_table & kwargs["key"]).fetch1(
-                cov_fr_vec_meta_param_name)
-            raise Exception(f"make sure this works as expected, then remove this exception")
+            kwargs["cov_fr_vec_param_name"] = kwargs["key"][cov_fr_vec_meta_param_name]
         if "metric_name" not in kwargs:
             upstream_params_table = upstream_table._get_params_table()()
             kwargs["metric_name"] = (upstream_params_table & kwargs["key"]).fetch1("metric_name")
-            raise Exception(f"make sure this works as expected, then remove this exception")
 
         return tuple([kwargs[x] for x in [
             "cov_fr_vec_param_name", "metric_name", "recording_set_name",

@@ -6,7 +6,7 @@ import pandas as pd
 import spyglass as nd
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, get_val_pairs, \
-    plot_junction_fractions
+    plot_junction_fractions, plot_task_phases
 from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector_table_base import \
     PathWellFRVecSummBase, PopulationAnalysisSecKeyParamsBase, \
     PopulationAnalysisSelBase
@@ -781,7 +781,8 @@ class FRDiffVecCosSimCovNnAveSummBase(PathWellFRVecSummBase):
 
         # ...Define bootstrap params as indicated
         params_table_subset = (self._get_params_table()() & key)
-        bootstrap_params = params_table_subset.get_boot_params()
+        bonferroni_num_tests = len(set(metric_df.x_val))
+        bootstrap_params = params_table_subset.get_boot_params(bonferroni_num_tests)
         boot_set_name = params_table_subset.fetch1("boot_set_name")
 
         # average values
@@ -1028,10 +1029,10 @@ class FRDiffVecCosSimWANnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
         return "Time from well arrival (s)"
 
     def _get_x_lims(self):
-        return [0, 2]
+        return [-1, 3]
 
     def _get_xticks(self):
-        return [.5, 1, 1.5]
+        return [-1, 0, 1, 2, 3]
 
     # Override parent class method so can add params specific to this table
     def get_default_table_entry_params(self):
@@ -1042,6 +1043,17 @@ class FRDiffVecCosSimWANnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
 
         # Return default params
         return params
+
+    def extend_plot_results(self, **kwargs):
+
+        super().extend_plot_results(**kwargs)
+
+        if not kwargs["empty_plot"]:
+
+            ax = kwargs["ax"]
+
+            # Colored patches to denote task phase
+            plot_task_phases(ax, "time_in_delay")
 
 
 @schema
@@ -1124,10 +1136,17 @@ class FRDiffVecCosSimPptNnAveSumm(FRDiffVecCosSimCovNnAveSummBase):
 
     def extend_plot_results(self, **kwargs):
 
-        # Vertical lines to denote track segments
+        super().extend_plot_results(**kwargs)
+
         if not kwargs["empty_plot"]:
+
             ax = kwargs["ax"]
+
+            # Vertical lines to denote track segments
             plot_junction_fractions(ax)
+
+            # Colored patches to denote task phase
+            plot_task_phases(ax, "path_progression")
 
 
 def populate_jguidera_firing_rate_difference_vector_similarity_ave(

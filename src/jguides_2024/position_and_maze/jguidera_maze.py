@@ -1245,6 +1245,8 @@ class MazePathWell:
 
                 "outbound_even_odd_correct_stay_trials": cls.get_outbound_path_names,
 
+                "same_path": cls.get_rewarded_path_names,
+
                 "same_path_outbound_correct_correct_trials": cls.get_outbound_path_names,
                 "same_path_outbound_correct_incorrect_trials": cls.get_outbound_path_names,
                 "same_path_outbound_prev_correct_incorrect_trials": cls.get_outbound_path_names,
@@ -1325,6 +1327,12 @@ class MazePathWell:
         return f"{path_name}_{trial_text}"
 
     @classmethod
+    def get_low_speed_trial_label_name(cls, label_name, trial_text):
+        # Check inputs
+        check_membership([trial_text], cls.low_speed_trial_text())
+        return f"{label_name}_{trial_text}"
+
+    @classmethod
     def split_stay_leave_trial_path_name(cls, stay_leave_trial_path_name, trial_text=None):
 
         # Get trial text if not passed
@@ -1343,6 +1351,13 @@ class MazePathWell:
     @staticmethod
     def stay_leave_trial_text(text_type=None):
         text_map = {"stay": "stay_trial", "leave": "leave_trial"}
+        if text_type is not None:
+            return text_map[text_type]
+        return list(text_map.values())
+
+    @staticmethod
+    def low_speed_trial_text(text_type=None):
+        text_map = {"low_speed": "low_speed_trial", "non_low_speed": "non_low_speed_trial"}
         if text_type is not None:
             return text_map[text_type]
         return list(text_map.values())

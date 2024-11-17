@@ -1326,13 +1326,15 @@ def plot_merge_matrices(
     plt.show()
 
 
-def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="whitened", color="#2196F3",
+def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="whitened", color=None,
                            title=None, ax=None):
     # Get inputs if not passed
     if ax is None:
         _, ax = plt.subplots()
     if title is None:
         title = f"{sort_group_id}_{unit_id}"
+    if color is None:
+        color = "#2196F3"
 
     # Define amplitude range and spacing between traces
     if waveform_type == "whitened":
@@ -1343,12 +1345,13 @@ def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="
         trace_offset = 200
 
     data = cluster_data["sort_groups"][sort_group_id][waveform_type]
-    n_channels = data["n_channels"]
+    wv_avg = data["average_waveforms"][unit_id]
+
+    n_channels = np.shape(wv_avg)[0]
     n_points = data["waveform_window"].size
     ax.axvline(x=n_points / 2, color="#9E9E9E", linewidth=1)
 
     offset = np.tile(-np.arange(n_channels) * trace_offset, (n_points, 1))
-    wv_avg = data["average_waveforms"][unit_id]
     trace = wv_avg.T + offset
     peak_ind = np.full(n_channels, False)
     peak_ind[data["peak_channels"][unit_id]] = True
@@ -1367,8 +1370,8 @@ def plot_average_waveforms_wrapper(cluster_data, sort_group_unit_ids=None, subpl
     # Get inputs if not passed
     if sort_group_unit_ids is None:
         sort_group_unit_ids = np.concatenate(
-            [[(sort_group_id, unit_id) for unit_id in vals["whitened"]["average_waveforms"].keys()]
-             for sort_group_id, vals in cluster_data["sort_groups"].items() if "whitened" in vals])
+            [[(sort_group_id, unit_id) for unit_id in cluster_data["sort_groups"][sort_group_id]["whitened"]["average_waveforms"].keys()]
+             for sort_group_id in cluster_data["sort_groups"]])
 
     # Plot waveforms for multiple units
     num_columns = 10
@@ -1383,7 +1386,12 @@ def plot_average_waveforms_wrapper(cluster_data, sort_group_unit_ids=None, subpl
     for sort_group_id, unit_id in sort_group_unit_ids:
         ax = get_ax_for_layout(axes, plot_counter)
         plot_counter += 1
-        plot_average_waveforms(cluster_data, sort_group_id, unit_id, ax=ax)
+        # Different color if merged unit
+        color = None
+        if "merged_units" in cluster_data["sort_groups"][sort_group_id]["whitened"]:
+            if unit_id in cluster_data["sort_groups"][sort_group_id]["whitened"]["merged_units"]:
+                color = "red"
+        plot_average_waveforms(cluster_data, sort_group_id, unit_id, color=color, ax=ax)
 
 
 def plot_amplitude_distribution(cluster_data, sort_group_id, unit_id,

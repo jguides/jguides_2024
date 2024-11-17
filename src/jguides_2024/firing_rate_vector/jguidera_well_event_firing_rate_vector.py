@@ -110,7 +110,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds]
         primary_time_rel_wa_dig_single_axis_param_names = [
                 TimeRelWADigSingleAxisParams().lookup_param_name(x)
-                for x in [[0, 2]]]  # make all combinations with each of these
+                for x in [[-1, 3]]]  # make all combinations with each of these
         brain_region_cohort_name = "all_targeted"
         curation_set_name = "runs_analysis_v1"
         primary_features = {
@@ -136,7 +136,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
             ResEpochSpikesSmParams().lookup_param_name([kernel_sd]) for kernel_sd in primary_kernel_sds_2]
         primary_time_rel_wa_dig_single_axis_param_names_2 = [
                 TimeRelWADigSingleAxisParams().lookup_param_name(x)
-                for x in [[-1, 3], [0, 2]]]  # make all combinations with each of these
+                for x in [[-1, 3]]]  # make all combinations with each of these
 
         # Restrict above params if outside params passed
         if "time_rel_wa_fr_vec_param_name" in key_filter:

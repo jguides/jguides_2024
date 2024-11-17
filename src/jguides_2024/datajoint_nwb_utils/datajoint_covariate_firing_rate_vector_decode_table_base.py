@@ -186,16 +186,6 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
         return super()._default_cohort_boot_set_names() + [
             "brain_region_diff_rat_cohort", "relationship_div_rat_cohort_median"]
 
-    def delete_(self, key, safemode=True):
-        # If recording set name not in key but components that determine it are, then
-        # find matching recording set names given the components, to avoid deleting irrelevant
-        # entries
-        key = copy.deepcopy(key)  # make copy of key to avoid changing outside function
-        recording_set_names = RecordingSet().get_matching_recording_set_names(key)
-        for recording_set_name in recording_set_names:
-            key.update({"recording_set_name": recording_set_name})
-            delete_(self, [], key, safemode)
-
     def insert1(self, key, **kwargs):
 
         # Only populate if no entry in main table. Alternative is to set skip_insertion to True for part table,
@@ -207,8 +197,13 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
             # Concatenate performance dfs across entries
             df_concat = self._get_main_table()()._upstream_table()().get_concat_metric_df(key["upstream_keys"])
 
-            if len(df_concat) == 0:
-                raise Exception(f"df_concat empty. This is not expected")
+            # Raise error if df is empty and this is not expected
+            expected_empty_df_concat_keys = [
+                {'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'recording_set_name': 'fig_Haight_single_contingency_rotation', 'brain_region_cohort_name': 'all_targeted', 'curation_set_name': 'runs_analysis_v1', 'upstream_keys': [{'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run1_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run1'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run2_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run2'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run3_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run3'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run4_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run4'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run5_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run5'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run6_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run6'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run7_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run7'}, {'nwb_file_name': 'fig20211108_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run8_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run8'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run1_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run1'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run2_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run2'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run3_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run3'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run4_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run4'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run5_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run5'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run6_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run6'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run7_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run7'}, {'nwb_file_name': 'fig20211109_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run8_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run8'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run1_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run1'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run2_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run2'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run3_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run3'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run4_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run4'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run5_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run5'}, {'nwb_file_name': 'fig20211110_.nwb', 'brain_region': 'OFC_targeted', 'brain_region_units_param_name': '0.1_run6_rand_target_region_50_0', 'curation_name': 'raw data valid times no premaze no home_3', 'res_time_bins_pool_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb', 'time_rel_wa_dig_param_name': '0.25', 'time_rel_wa_dig_single_axis_param_name': '0^2', 'res_epoch_spikes_sm_param_name': '0.1', 'decode_time_rel_wa_fr_vec_param_name': 'SVC_stay_leave_loocv_stay_leave_trials_pre_departure', 'zscore_fr': 0, 'time_rel_wa_fr_vec_param_name': 'stay_leave_trials_pre_departure', 'epochs_description': 'run6'}], 'decode_time_rel_wa_fr_vec_summ_param_name': 'default^0.1_1_rand_target_region_50_single_iteration_0'},
+            ]
+
+            if len(df_concat) == 0 and key not in expected_empty_df_concat_keys:
+                raise Exception(f"df_concat is empty. This is not expected")
 
             # Insert into main table
             key = insert_analysis_table_entry(self, [df_concat], key, skip_insertion=True)
@@ -219,6 +214,16 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
             key_subset = {k: v for k, v in key.items() if k not in ["analysis_file_name", "df_concat_object_id"]}
             for upstream_key in upstream_keys:
                 self.Upstream.insert1({**key_subset, **upstream_key})
+
+    def delete_(self, key, safemode=True):
+        # If recording set name not in key but components that determine it are, then
+        # find matching recording set names given the components, to avoid deleting irrelevant
+        # entries
+        key = copy.deepcopy(key)  # make copy of key to avoid changing outside function
+        recording_set_names = RecordingSet().get_matching_recording_set_names(key)
+        for recording_set_name in recording_set_names:
+            key.update({"recording_set_name": recording_set_name})
+            delete_(self, [], key, safemode)
 
 
 class DecodeCovFRVecBase(ComputedBase):
@@ -321,7 +326,7 @@ class DecodeCovFRVecBase(ComputedBase):
 
         return min_num_classes
 
-    def _get_train_test_data(self, epochs, key, vector_df):
+    def _get_train_test_data(self, epochs, key, vector_df, verbose=False):
 
         # Get parameters
         params_table_subset = (self._get_params_table() & key)
@@ -418,32 +423,35 @@ class DecodeCovFRVecBase(ComputedBase):
 
                 cross_validate = cross_validation_always
 
-                # Skip labels with insufficient samples. Require all x for a label to meet minimum sample criterion
+                # Define minimum number of classes required to proceed
                 min_num_classes = self._get_min_num_samples_train_test(
                     classifier_name, cross_validation_method, cross_validate)
-                insufficient_trials_labels = []
-                unique_x = np.unique(vector_df.x)
-                for label in labels:
-                    df_subset = df_filter_columns(vector_df, {"label": label})
-                    if len(df_subset) == 0:
-                        insufficient_trials_labels.append(label)
-                    if any([np.sum(df_subset.x == x) < min_num_classes for x in unique_x]):
-                        insufficient_trials_labels.append(label)
 
-                num_possible_iterations += len(iterate_x_list)
-                if len(insufficient_trials_labels) > 0:
-                    print(f"insufficient trials for labels {insufficient_trials_labels}. Excluding these...")
-
-                    if len(insufficient_trials_labels) == len(labels):
-                        num_skipped_iterations += len(iterate_x_list)
-
-                    labels = [x for x in labels if x not in insufficient_trials_labels]
-
-                labels_1 = labels_2 = train_labels = test_labels = labels
-
+                # Loop through x
                 for x in iterate_x_list:
 
+                    # Determine which labels have a sufficient number of samples
+                    valid_labels = []
+                    for label in labels:
+
+                        # Do not filter for x if nan (nan signifies not filtering; see above where
+                        # iterate_x_list defined)
+                        df_subset = df_filter_columns(vector_df, {"label": label})
+                        if not np.isnan(x):
+                            df_subset = df_filter_columns(vector_df, {"x": x})
+
+                        # Skip label if insufficient samples
+                        num_possible_iterations += 1
+                        if len(df_subset) < min_num_classes:
+                            if verbose:
+                                print(f"On x = {x}. Insufficient trials for labels {label}. Skipping...")
+                            num_skipped_iterations += 1
+                            raise Exception(f"check this code")
+                        else:
+                            valid_labels.append(label)
+
                     # Store
+                    labels_1 = labels_2 = train_labels = test_labels = valid_labels
                     data_list.append(
                         (label_pair_name, label_train_test_order, epoch_train_test_order,
                          epochs_1, epochs_2, labels_1, labels_2,
@@ -548,27 +556,34 @@ class DecodeCovFRVecBase(ComputedBase):
                                 set(train_labels) == set(test_labels), set(train_epochs) == set(test_epochs))
                             cross_validate = np.logical_or(same_train_test_labels_epochs, cross_validation_always)
 
-                            # Continue to next iteration if insufficient samples
+                            # Define minimum number of classes required to proceed
                             min_num_classes = self._get_min_num_samples_train_test(
                                 classifier_name, cross_validation_method, cross_validate)
-                            insufficient_trials = False
-                            unique_x = np.unique(vector_df.x)
-                            for label in [label_1, label_2]:
-                                df_subset = df_filter_columns(vector_df, {"label": label})
-                                if len(df_subset) == 0:
-                                    insufficient_trials = True
-                                if any([np.sum(df_subset.x == x) < min_num_classes for x in unique_x]):
-                                    insufficient_trials = True
-
-                            num_possible_iterations += len(iterate_x_list)
-                            if insufficient_trials:
-                                print(f"{label_1} {label_2} pair does not have sufficient trials. Skipping...")
-                                print("trials per x:", [np.sum(df_subset.x == x) for x in unique_x])
-                                num_skipped_iterations += len(iterate_x_list)
-                                continue
 
                             # Loop through x
                             for x in iterate_x_list:
+
+                                # Continue to next iteration if insufficient samples for either label
+                                insufficient_trials = False
+                                for label in [label_1, label_2]:
+
+                                    # Do not filter for x if nan (nan signifies not filtering; see above where
+                                    # iterate_x_list defined)
+                                    df_subset = df_filter_columns(vector_df, {"label": label})
+                                    if not np.isnan(x):
+                                        df_subset = df_filter_columns(df_subset, {"x": x})
+
+                                    if len(set(df_subset.epoch_trial_number)) < min_num_classes:
+                                        insufficient_trials = True
+
+                                num_possible_iterations += 1
+                                if insufficient_trials:
+                                    if verbose:
+                                        print(f"On x {x}. {label_1} {label_2} pair does not have sufficient trials. "
+                                              f"Skipping...")
+                                        print("num trials:", len(df_subset))
+                                    num_skipped_iterations += 1
+                                    continue
 
                                 # Store
                                 data_list.append(
@@ -619,10 +634,14 @@ class DecodeCovFRVecBase(ComputedBase):
             vector_df.label = [extract_from_path_name(x, "end_well_plus_descriptor") for x in vector_df.label]
         elif decode_var in ["path_progression_collapse_path"]:
             vector_df.label = [extract_from_path_name(x, "descriptor") for x in vector_df.label]
-        elif decode_var in ["correct_incorrect", "previous_correct_incorrect"]:
+        # Do not alter
+        elif decode_var in [
+            "correct_incorrect", "previous_correct_incorrect", "stay_leave", "outbound_path", "path",
+            "path_progression", "time_in_delay"]:
             pass
         else:
-            raise Exception(f"Altering labels. Case decode_var = {decode_var} not accounted for.")
+            raise Exception(f"Altering labels. Case decode_var = {decode_var} not accounted for. "
+                            f"set(vector_df.label): {set(vector_df.label)}")
 
         # Get train/test data to loop through
         train_test_df, num_possible_iterations, num_skipped_iterations = self._get_train_test_data(
@@ -785,8 +804,13 @@ class DecodeCovFRVecBase(ComputedBase):
 
         # Raise exception if cmat_df has a different number of entries than expected based on number of
         # skipped entries (due to limited data)
-        if len(cmat_df) + num_skipped_iterations != num_possible_iterations:
-            raise Exception(f"cmat_df does not have expected length. len(cmat_df): {len(cmat_df)} "
+        if len(cmat_df) == 0:
+            total_num_test_labels = 0
+        else:
+            total_num_test_labels = len(np.concatenate(np.vstack(cmat_df.test_labels)))
+        if total_num_test_labels + num_skipped_iterations != num_possible_iterations:
+            raise Exception(f"cmat_df does not have expected length and number of test labels. total_num_test_labels: "
+                            f"{total_num_test_labels} "
                             f"num_skipped_iterations: {num_skipped_iterations} num_possible_iterations: "
                             f"{num_possible_iterations}")
 
@@ -994,6 +1018,7 @@ class DecodeCovFRVecBase(ComputedBase):
             "SVC_correct_incorrect_loocv_stay_trials",
             "SVC_correct_incorrect_loocv_stay_trials_pdaw",
             "SVC_correct_incorrect_loocv_stay_trials_pdaw_expand",
+            "SVC_stay_leave_loocv_stay_leave_trials_pre_departure",
             "LDA_outbound_path_loocv_correct_stay_trials",
             "LDA_outbound_path_loocv_correct_stay_trials_pdaw_expand",
             "LDA_path_loocv_correct_stay_trials",
@@ -1024,7 +1049,7 @@ class DecodeCovFRVecBase(ComputedBase):
 
         return df
 
-    def get_concat_metric_df(self, keys, debug_mode=True):
+    def get_concat_metric_df(self, keys, debug_mode=False):
 
         print(f"Concatenating table entries from {self.table_name} across {len(keys)} keys...")
 
@@ -1120,7 +1145,8 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
 
         # ...Define bootstrap params as indicated
         params_table_subset = (self._get_params_table()() & key)
-        bootstrap_params = params_table_subset.get_boot_params()
+        bonferroni_num_tests = len(set(metric_df.x_val))
+        bootstrap_params = params_table_subset.get_boot_params(bonferroni_num_tests)
         boot_set_name = params_table_subset.get_params()["boot_set_name"]
 
         # average values

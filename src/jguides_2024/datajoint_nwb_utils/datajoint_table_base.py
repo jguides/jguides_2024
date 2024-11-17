@@ -38,6 +38,23 @@ populate, insert1, fetch1. So avoiding overriding datajoint table methods with t
 
 class ParamsBase(dj.Manual):
 
+    def _get_main_table(self):
+        """
+        Get "main" datajoint table for current params table
+        :return: datajoint table
+        """
+
+        # Get current table name
+        table_name = get_table_name(self)
+
+        # Raise error if current table doesnt following naming convention (require override of this method in that case)
+        if table_name[-6:] != "Params":
+            raise Exception(
+                f"Non canonical params table name; must override this method for current table given this")
+
+        # Return main table name. By convention, this has the same name as the current able without the final "Sel"
+        return get_table(table_name[:-6])
+
     def meta_param_name(self):
         # As method rather than attribute because if datajoint table not initialized, get error when defining attribute
 
@@ -52,6 +69,7 @@ class ParamsBase(dj.Manual):
             kwargs["skip_duplicates"] = True
 
         super().insert1(key, **kwargs)
+
 
 class SecKeyParamsBase(ParamsBase):
 
