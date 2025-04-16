@@ -119,8 +119,7 @@ def add_franklab_preproc_params():
 
 
 # Get channels with peak waveform, with code used for CuratedSpikeSorting
-def get_peak_ch_map(nwb_file_name, sort_group_id, sort_interval_name="raw data valid times no premaze no home",
-                    curation_id=2, peak_sign="neg"):
+def get_peak_ch_map(nwb_file_name, sort_group_id, sort_interval_name, curation_id=2, peak_sign="neg"):
 
     # Define key for querying table
     key = {"nwb_file_name": nwb_file_name, "sort_group_id": sort_group_id, "sort_interval_name": sort_interval_name,

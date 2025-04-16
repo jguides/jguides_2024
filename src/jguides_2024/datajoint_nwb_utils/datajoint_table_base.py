@@ -418,7 +418,10 @@ class ComputedBase(dj.Computed):
                 selection_table().insert_defaults(**kwargs)
 
         # Populate main table
-        populate_flexible_key(self, key, tolerate_error, verbose=verbose)
+        processes = 20
+        if "processes" in kwargs:
+            processes = kwargs["processes"]
+        populate_flexible_key(self, key, tolerate_error, verbose=verbose, processes=processes)
 
         # Return list with populated tables so we can avoid running populate on these again
         return populated_tables

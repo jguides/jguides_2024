@@ -1327,7 +1327,7 @@ def plot_merge_matrices(
 
 
 def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="whitened", color=None,
-                           title=None, ax=None):
+                           title=None, ax=None, max_num_chs=3):
     # Get inputs if not passed
     if ax is None:
         _, ax = plt.subplots()
@@ -1347,14 +1347,20 @@ def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="
     data = cluster_data["sort_groups"][sort_group_id][waveform_type]
     wv_avg = data["average_waveforms"][unit_id]
 
-    n_channels = np.shape(wv_avg)[0]
+    peak_ch = data["peak_channels"][unit_id]
+    if max_num_chs is None:
+        max_num_chs = np.shape(wv_avg)[0]
+    min_ch = np.max([0, peak_ch - max_num_chs])
+    max_ch = np.min([np.shape(wv_avg)[0], peak_ch + max_num_chs])
+    n_channels = max_ch - min_ch
+
     n_points = data["waveform_window"].size
     ax.axvline(x=n_points / 2, color="#9E9E9E", linewidth=1)
 
     offset = np.tile(-np.arange(n_channels) * trace_offset, (n_points, 1))
-    trace = wv_avg.T + offset
+    trace = wv_avg[min_ch:max_ch].T + offset
     peak_ind = np.full(n_channels, False)
-    peak_ind[data["peak_channels"][unit_id]] = True
+    peak_ind[peak_ch - min_ch] = True
 
     ax.plot(trace[:, ~peak_ind], color=color, linewidth=1, clip_on=False)
     ax.plot(trace[:, peak_ind], color=color, linewidth=2.5, clip_on=False)
@@ -1364,6 +1370,7 @@ def plot_average_waveforms(cluster_data, sort_group_id, unit_id, waveform_type="
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
     ax.set_title(title, fontsize=12)
+    ax.text(0, 0, f"min/max ch\n: {min_ch} {max_ch}", fontsize=6)
 
 
 def plot_average_waveforms_wrapper(cluster_data, sort_group_unit_ids=None, subplot_height=3):

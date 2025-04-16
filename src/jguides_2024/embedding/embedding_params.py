@@ -16,6 +16,56 @@ class EmbeddingParams:
         data_list = []
         ZoomScaleFactor = namedtuple("ZoomScaleFactor", "x1 x2 y1 y2 z1 z2")
 
+        # J1620210529, 0.1 kernel SD, 3D
+
+        # all epochs, all time
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'J1620210529_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # all run epochs
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_runs_target_region',
+          'epochs_id': '2_4_6_8_10_12_14_16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 173, -54, ZoomScaleFactor(  # 158, -94
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], 136, 111, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 63, -162,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
+        # all epochs, only path traversals
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'J1620210529_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#DioWellDATrials$0^0_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # all run epochs
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_runs_target_region',
+          'epochs_id': '2_4_6_8_10_12_14_16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 150, 30, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
         # J1620210606, 0.1 kernel SD, 3D
         base_k = {
           'fr_vec_emb_param_name': '15^3',
@@ -97,6 +147,55 @@ class EmbeddingParams:
              scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ]
 
+        # J1620210607, 0.1 kernel SD, 3D
+        # all epoch
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'J1620210607_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#EpochInterval_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # epoch 16
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run8_target_region',
+          'epochs_id': '16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 25, -94, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
+        # only path traversals
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'J1620210607_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#DioWellDATrials$0^0_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # epoch 16
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run8_target_region',
+          'epochs_id': '16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 150, 30, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
         # mango20211207, 0.1 kernel SD, 3D
         base_k = {
           'fr_vec_emb_param_name': '15^3',
@@ -112,12 +211,64 @@ class EmbeddingParams:
           'epochs_id': '6'}}
         scale_factor = .12
         data_list += [
-         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], -103, -70, ZoomScaleFactor(
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], -160, -12, ZoomScaleFactor(
              scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -80, 106, ZoomScaleFactor(
             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], -116, 90, ZoomScaleFactor(
             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
+        # epoch 16
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run8_target_region',
+          'epochs_id': '16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], -23, -102, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
+        # only path traversals
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'mango20211207_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#DioWellDATrials$0^0_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # epoch 8
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run4_target_region',
+          'epochs_id': '8'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], -23, -102, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
+        # epoch 16
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run8_target_region',
+          'epochs_id': '16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], -23, -102, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -177, -44, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 1, 30,  ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ]
 
         # june20220420, 0.1 kernel SD, 3D
@@ -153,6 +304,30 @@ class EmbeddingParams:
             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ]
 
+        # june20220421, 0.1 kernel SD, 3D
+
+        # only path traversals
+        base_k = {
+          'fr_vec_emb_param_name': '15^3',
+          'nwb_file_name': 'june20220421_.nwb',
+          'res_epoch_spikes_sm_param_name': '0.1',
+          'res_time_bins_pool_cohort_param_name': 'ResEpochTimeBins#0.1#DioWellDATrials$0^0_no_comb',
+          'zscore_fr': False}
+        k_ctx = {'curation_name': 'raw data valid times no premaze no home_3'}
+        k_hpc = {'curation_name': 'raw data valid times no premaze no home no sleep_3'}
+
+        # epoch 16
+        k = {**base_k, **{
+          'brain_region_units_param_name': '0.1_run8_target_region',
+          'epochs_id': '16'}}
+        scale_factor = .15
+        data_list += [
+         ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 70, -10, ZoomScaleFactor(
+             scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], -86, 88, ZoomScaleFactor(
+            scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
+        ]
+
         # peanut20201108, 0.1 kernel SD, 3D
         base_k = {
           'fr_vec_emb_param_name': '15^3',
@@ -169,6 +344,8 @@ class EmbeddingParams:
         k_hpc = {'curation_name': 'pos 7 valid times no premaze no home no sleep_3'}
         scale_factor = .08
         data_list += [
+        ({**k, **k_ctx, **{"brain_region": "mPFC_targeted"}}, [], 50, -50, ZoomScaleFactor(
+            scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
          ({**k, **k_ctx, **{"brain_region": "OFC_targeted"}}, [], 50, -50, ZoomScaleFactor(
              scale_factor, scale_factor, scale_factor, scale_factor, scale_factor, scale_factor)),
         ({**k, **k_hpc, **{"brain_region": "CA1_targeted"}}, [], 126, -129, ZoomScaleFactor(

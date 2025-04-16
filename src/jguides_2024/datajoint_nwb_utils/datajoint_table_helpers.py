@@ -68,9 +68,9 @@ def fetch1_tolerate_no_entry(table, attribute=None):
         return None
 
 
-def fetch_nwb(table):
+def fetch_nwb(table, **kwargs):
 
-    return fetch_nwb_(table, (nd.common.AnalysisNwbfile, 'analysis_file_abs_path'))
+    return fetch_nwb_(table, (nd.common.AnalysisNwbfile, 'analysis_file_abs_path'), **kwargs)
 
 
 def fetch1_dataframe_tolerate_no_entry(table_subset, object_name=None):
@@ -522,7 +522,7 @@ def delete_multiple_flexible_key(tables, key):
         delete_flexible_key(table, key)
 
 
-def populate_flexible_key(table, key=None, tolerate_error=False, error_message=None, verbose=False):
+def populate_flexible_key(table, key=None, tolerate_error=False, error_message=None, verbose=False, processes=20):
 
     # Get inputs if not passed
     if error_message is None:
@@ -539,24 +539,36 @@ def populate_flexible_key(table, key=None, tolerate_error=False, error_message=N
         # Tolerate error
         if tolerate_error:
             try:
-                table.populate()
+                if processes is None:
+                    table.populate()
+                else:
+                    table.populate(processes=processes)
             except:
                 print(error_message)
         # Do not tolerate error
         else:
-            table.populate()
+            if processes is None:
+                table.populate()
+            else:
+                table.populate(processes=processes)
 
     # Otherwise populate subset of table with key
     else:
         # Tolerate error
         if tolerate_error:
             try:
-                table.populate(key)
+                if processes is None:
+                    table.populate(key)
+                else:
+                    table.populate(key, processes=processes)
             except:
                 print(error_message)
         # Do not tolerate error
         else:
-            table.populate(key)
+            if processes is None:
+                table.populate(key)
+            else:
+                table.populate(key, processes=processes)
 
 
 def populate_multiple_flexible_key(tables, key=None, tolerate_error=False, error_message=None):
@@ -1035,7 +1047,7 @@ def get_param_defaults_map():
           "curation_id": default_curation_id,
           "eps_units_param_name": EpsUnitsParams().lookup_param_name([.1]),
             "brain_region_cohort_name": "all_targeted",
-            "curation_set_name": "runs_analysis_v1",
+            "curation_set_name": "runs_analysis_v2",
           "ppt_param_name": PptParams().get_default_param_name(),
             # "unit_subset_type": "all",  # TODO: remove if can; ideally use defaults stored with fns.
             "zscore_fr": 0,
@@ -1061,18 +1073,12 @@ def get_valid_position_info_param_names():
 
 
 def get_curation_name(sort_interval_name, curation_id):
-    return make_param_name([sort_interval_name, curation_id], "_")
+    return make_param_name([sort_interval_name, curation_id], "_", tolerate_non_unique=True)
 
 
 def split_curation_name(curation_name):
-
     split_curation_name = curation_name.split("_")
-    # Check that only two components separated by underscore (first will be taken as sort_interval_name,
-    # second as curation_id)
-    if len(split_curation_name) > 2:
-        raise Exception(f"curation_name should have a single underscore")
-
-    return split_curation_name[0], int(split_curation_name[1])
+    return "_".join(split_curation_name[:-1]), int(split_curation_name[-1])
 
 
 def populate_insert(table, **kwargs):
@@ -1390,6 +1396,10 @@ def get_boot_params(boot_set_name, bonferroni_num_tests=None):
         "same_different_outbound_path_correct_diff", "same_different_outbound_path_correct_diff_rat_cohort",
         "same_different_outbound_path_correct_diff_brain_region_diff",
         "same_different_outbound_path_correct_diff_brain_region_diff_rat_cohort",
+        "low_speed_non_low_speed_diff",
+        "low_speed_non_low_speed_diff_rat_cohort",
+        "low_speed_non_low_speed_diff_brain_region_diff",
+        "low_speed_non_low_speed_diff_brain_region_diff_rat_cohort"
     ]:
         num_bootstrap_samples = 1000
         average_fn = np.mean

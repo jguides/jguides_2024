@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import multiprocessing as mp
 
 from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_subject_id, \
     plot_junction_fractions, get_val_pairs, plot_horizontal_lines, \
@@ -21,7 +22,7 @@ from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionColor, Br
 from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription, RunEpoch, EpochsDescriptions, \
     RecordingSet
 from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
-from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell
+from src.jguides_2024.position_and_maze.jguidera_maze import MazePathWell, get_n_junction_path_junction_fractions
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnitsParams, BrainRegionUnitsCohortType, \
     EpsUnitsParams, BrainRegionUnitsFail, BrainRegionUnits
 from src.jguides_2024.task_event.jguidera_dio_trials import DioWellDDTrials, DioWellTrials
@@ -124,7 +125,8 @@ class CovariateFRVecParamsBase(SecKeyParamsBase):
 
     def update_labels(self, labels):
 
-        # Update labels to have even/odd, stay/leave, even/odd stay, or correct/incorrect text if indicated
+        # Update labels to have even/odd, stay/leave, even/odd stay, correct/incorrect, low speed/non-low speed
+        # text if indicated
 
         # Get labels description
         labels_description = self.get_labels_description()
@@ -155,6 +157,13 @@ class CovariateFRVecParamsBase(SecKeyParamsBase):
                 labels = np.concatenate(
                     [[MazePathWell.get_even_odd_trial_name(x, even_odd_text=even_odd_text) for x in labels]
                      for even_odd_text in MazePathWell.even_odd_trial_text()])
+
+        elif "low_speed" in labels_description:
+
+            # Add low_speed / non_low_speed
+            labels = np.concatenate([[MazePathWell.get_low_speed_trial_label_name(
+                    x, trial_text=trial_text) for x in labels]
+                    for trial_text in MazePathWell.low_speed_trial_text()])
 
         else:
             raise Exception(f"{labels_description} not accounted for")
@@ -261,12 +270,21 @@ class CovariateFRVecBase(ComputedBase):
             # Add epoch to df
             df["epoch"] = [epoch] * len(df)
 
-            # Add trial numbers within the epoch
-            bout_idxs_name = unpack_single_element([x for x in df.columns if x in ["bout_idxs", "bout_pair_idxs"]])
-            bout_idxs_midpoints = np.mean(np.vstack(df[bout_idxs_name]), axis=1)
-            dio_well_trials_key = {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
-            epoch_trial_numbers = (DioWellTrials & dio_well_trials_key).get_time_epoch_trial_nums(bout_idxs_midpoints)
-            df["epoch_trial_number"] = epoch_trial_numbers
+            # Add trial numbers within the epoch if indicated
+
+            # ...define relevant column name
+            bout_idxs_name = None
+            if object_id_name == "diff_vector_df":
+                bout_idxs_name = "bout_pair_idxs"
+            elif object_id_name == "vector_df":
+                bout_idxs_name = "bout_idxs"
+
+            # ...add epoch trial numbers if indicated
+            if bout_idxs_name is not None:
+                bout_idxs_midpoints = np.mean(np.vstack(df[bout_idxs_name]), axis=1)
+                dio_well_trials_key = {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
+                epoch_trial_numbers = (DioWellTrials & dio_well_trials_key).get_time_epoch_trial_nums(bout_idxs_midpoints)
+                df["epoch_trial_number"] = epoch_trial_numbers
 
             # Append to list
             dfs.append(df)
@@ -599,12 +617,6 @@ def _get_vector_df(table, entry_key, store_key_names):
 
 def _get_df(table, entry_key, store_key_names):
     df = (table & entry_key).fetch1_dataframe()
-    metadata_vals = [entry_key[k] for k in store_key_names]
-    return metadata_vals + [df]
-
-
-def _get_same_diff_x_ratio_df(table, entry_key, store_key_names):
-    df = (table & entry_key).get_same_diff_x_ratio_df()
     metadata_vals = [entry_key[k] for k in store_key_names]
     return metadata_vals + [df]
 
@@ -1151,58 +1163,36 @@ class CovariateFRVecAveBase(ComputedBase):
 
         return kwargs
 
-    def get_concat_metric_df(
-            self, nwb_file_names, epochs_descriptions_names, brain_region_cohort_name,
-            brain_regions=None, curation_set_name=None, min_epoch_mean_firing_rate=.1,
-            res_epoch_spikes_sm_param_name=None, unit_subset_type=None, unit_subset_size=None,
-            unit_subset_iterations=None, zscore_fr=None, verbose=True, tolerate_missing=True,
-            **kwargs):
+    def get_concat_metric_df(self, keys, debug_mode=False, **kwargs):
 
         # Helper function for getting metric values across table entries. Return in a df
 
-        # Add default relationships to kwargs if not present
-        kwargs = self._add_default_relationships(kwargs)
+        print(f"Concatenating table entries from {self.table_name} across {len(keys)} keys...")
 
-        def unpack_df(table_subset, vals_index_name_list, data_list, subject_id, nwb_file_name, epochs_description,
-                      brain_region_units_param_name, brain_region, **kwargs):
+        # Iterate over restriction conditions and units
+        # If want to debug, do in for loop
+        if debug_mode:
+            df_list = []
+            for key in keys:
+                df_list.append(_get_dfs((self, key, kwargs)))
 
-            # Get map from label pair relationship to df with results
-            relationships = kwargs["relationships"]
-            metric_map = table_subset.get_label_relationship_metric_map(relationships)
+        # Otherwise do using parallelization
+        else:
+            import multiprocessing as mp
 
-            # Loop through relationships, conditions, and value index and add tuples that will correspond to
-            # df entries
-            for relationship, df in metric_map.items():
+            tables_keys = [(self, key, kwargs) for key in keys]
 
-                # note that eps_labels below is a combination of epoch pair and label (e.g. path)
-                for eps_labels, vals in df.items():
+            pool = mp.Pool(mp.cpu_count())
+            df_list = pool.map(_get_dfs, tables_keys)
+            pool.close()
+            pool.join()
 
-                    # Store name of index. will then check that same across instances and take the
-                    # single instance to define df column
-                    vals_index_name_list.append(vals.index.name)
-
-                    # Get x vals reflecting covariate (rough example: 10th of 10 total path fraction bins
-                    # corresponds to .95 path fraction)
-                    x_vals = table_subset._metric_index_as_bin_centers(vals.index, table_subset.fetch1("KEY"))
-
-                    for (val_index, val), x_val in zip(vals.items(), x_vals):
-
-                        # Append to list that will be used to construct df
-                        # Note: store brain_region_units_param_name just for convenience. e.g. helpful for
-                        # finding unit information corresponding to entries
-                        data_list.append(
-                            (brain_region, subject_id, nwb_file_name, epochs_description,
-                             val_index, x_val, val, brain_region_units_param_name,
-                             relationship, eps_labels, get_nwb_file_name_epochs_description(
-                                nwb_file_name, epochs_description)))
-
-        extra_column_names = ["relationship", "eps_labels", "nwb_file_name_epochs_description"]
-
-        return self._get_df_outer_loop(
-            unpack_df, nwb_file_names, epochs_descriptions_names, verbose, res_epoch_spikes_sm_param_name, zscore_fr,
-            brain_region_cohort_name, brain_regions, curation_set_name,
-                           min_epoch_mean_firing_rate, unit_subset_type, unit_subset_size,
-                           unit_subset_iterations, tolerate_missing, extra_column_names, **kwargs)
+        # Return concatenated entries
+        print(f"Returning df with concatenated entries...")
+        df_concat = None
+        if len(df_list) > 0:
+            return pd.concat(df_list)
+        return df_concat
 
     def get_concat_same_diff_x_ratio_df(
             self, nwb_file_names, epochs_descriptions_names, brain_region_cohort_name,
@@ -1303,7 +1293,8 @@ class CovariateFRVecAveBase(ComputedBase):
         labels_description = self.get_labels_description()
         if labels_description in [
             "none", "stay_leave_trials", "stay_leave_trials_pre_departure", "correct_incorrect_trials",
-            "correct_incorrect_stay_trials"]:
+            "correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw",
+            "low_speed_5_ppt_0.2_0.3887090246863618", "low_speed_10_ppt_0.2_0.3887090246863618"]:
             pass
         # Case 2: Restrict to across even and odd trials
         elif labels_description in [
@@ -1364,6 +1355,11 @@ class CovariateFRVecAveBase(ComputedBase):
 
         return df
 
+    def _get_plot_color(self):
+        # Get color based on brain region
+
+        return (BrainRegionColor & self.fetch1("KEY")).fetch1("color")
+
     def get_df_across_entries(self, keys=None, fn=_get_df, store_key_names=None, use_multiprocessing=True, **kwargs):
 
         if use_multiprocessing:
@@ -1402,11 +1398,6 @@ class CovariateFRVecAveBase(ComputedBase):
 
         return df_from_data_list(data_list, store_key_names + ["df"])
 
-    def _get_plot_color(self):
-        # Get color based on brain region
-
-        return (BrainRegionColor & self.fetch1("KEY")).fetch1("color")
-
     def plot_x_relationship_metric_arr(
             self, label_1, label_2, epoch_1, epoch_2, fig_ax_list=None, save_fig=False,
             plot_color_bar=True, **format_kwargs):
@@ -1417,7 +1408,7 @@ class CovariateFRVecAveBase(ComputedBase):
             "label_1": label_1, "label_2": label_2, "epoch_1": epoch_1, "epoch_2": epoch_2}, "metric_arr")
 
         # Convert to bin centers units
-        x_vals = self._metric_index_as_bin_centers(metric_arr.index).values
+        x_vals = self._metric_index_as_bin_centers(metric_arr.index, key=self.fetch1("KEY")).values
         metric_arr = pd.DataFrame(metric_arr.to_numpy(), columns=x_vals, index=x_vals)
 
         # Unpack figure / axis if passed, otherwise initialize
@@ -1427,7 +1418,10 @@ class CovariateFRVecAveBase(ComputedBase):
 
         # Plot heatmap with metric
         # Here, transpose so data in left upper half of plot
-        kwargs = {"spines_off_list": ["right", "bottom"]}
+        kwargs = dict()
+        clim = format_kwargs.pop("clim", None)
+        if clim is not None:
+            kwargs.update({"clim": clim})
         metric_arr = metric_arr.T
         plot_heatmap(metric_arr, fig_ax_list=fig_ax_list, zorder=0, plot_color_bar=plot_color_bar, **kwargs)
         ax.xaxis.tick_top()  # x ticks on top
@@ -1436,8 +1430,8 @@ class CovariateFRVecAveBase(ComputedBase):
         label_every_n = format_kwargs.pop("label_every_n", 2)
         ticklabels = get_ticklabels([np.round(x, 3) for x in metric_arr.index], idxs=np.arange(0, len(metric_arr), label_every_n))
         ticks = np.arange(0, len(ticklabels)) + .5  # place ticks in center of each bin
-        # ...update passed format params with those defined above
-        format_kwargs.update(kwargs)
+        # ...update passed format params
+        format_kwargs.update({"spines_off_list": ["right", "bottom"]})
         format_ax(ax=ax, xticks=ticks, yticks=ticks, xticklabels=ticklabels, yticklabels=ticklabels, **format_kwargs)
         ax.xaxis.set_label_position("top")  # put x label (if passed) on top
 
@@ -1516,6 +1510,101 @@ class CovariateFRVecAveBase(ComputedBase):
         return df
 
 
+def _get_vector_df(table, entry_key, store_key_names):
+    dfs = (table & entry_key).fetch1_dataframes().vector_df
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [dfs]
+
+
+def _get_df(table, entry_key, store_key_names):
+    df = (table & entry_key).fetch1_dataframe()
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [df]
+
+
+def _get_same_diff_x_ratio_df(table, entry_key, store_key_names):
+    df = (table & entry_key).get_same_diff_x_ratio_df()
+    metadata_vals = [entry_key[k] for k in store_key_names]
+    return metadata_vals + [df]
+
+
+
+# This function must be defined in module and not be a method of a class in order for parallelization to work
+def _get_dfs(table_key):
+    # Accept single argument as input instead of multiple so that can use multiprocessing "map function",
+    # which only works with one input
+
+    table, key, kwargs = table_key
+
+    kwargs = (table & key)._add_default_relationships(kwargs)
+    relationships = kwargs["relationships"]
+
+    # Get data for this table entry
+    subject_id = get_subject_id(key["nwb_file_name"])
+    nwb_file_name_epochs_description = get_nwb_file_name_epochs_description(
+        key["nwb_file_name"], key["epochs_description"])
+
+    table_subset = (table & key)
+
+    metric_processing_name = None
+    if "metric_processing_name" in kwargs:  # do not pop from kwargs
+        metric_processing_name = kwargs["metric_processing_name"]
+
+    vals_index_name_list = []
+    data_list = []
+
+    if metric_processing_name == "one_minus_on_off_diagonal_ratio":
+        df = table_subset.get_same_diff_x_ratio_df(**kwargs)
+
+        # Loop through conditions and value index and add tuples that will correspond to df entries
+        # note that eps_labels below is a combination of epoch pair and label (e.g. path)
+        for _, df_row in df.iterrows():
+            vals = getattr(df_row, "one_minus_on_off_diagonal_ratio")
+            # store name of index. will then check that same across instances and take the
+            # single instance to define df column
+            vals_index_name_list.append(vals.index.name)
+            # get x vals reflecting covariate (rough example: 10th of 10 total path fraction bins
+            # corresponds to .95 path fraction)
+            x_vals = table_subset._metric_index_as_bin_centers(vals.index, table_subset.fetch1("KEY"))
+            for (val_index, val), x_val in zip(vals.items(), x_vals):
+                data_list.append(
+                    (key["brain_region"], subject_id, key["nwb_file_name"], key["epochs_description"], val_index,
+                     x_val, val, key["brain_region_units_param_name"],
+                     df_row.relationship, df_row.eps_labels, nwb_file_name_epochs_description))
+
+    else:
+        metric_map = table_subset.get_label_relationship_metric_map(relationships)
+
+        # Loop through relationships, conditions, and value index and add tuples that will correspond to
+        # df entries
+        for relationship, df in metric_map.items():
+
+            # note that eps_labels below is a combination of epoch pair and label (e.g. path)
+            for eps_labels, vals in df.items():
+
+                # # Store name of index. will then check that same across instances and take the
+                # # single instance to define df column
+                vals_index_name_list.append(vals.index.name)
+
+                # Get x vals reflecting covariate (rough example: 10th of 10 total path fraction bins
+                # corresponds to .95 path fraction)
+                x_vals = table_subset._metric_index_as_bin_centers(vals.index, table_subset.fetch1("KEY"))
+
+                for (val_index, val), x_val in zip(vals.items(), x_vals):
+                    data_list.append((key["brain_region"], subject_id, key["nwb_file_name"],
+                                      key["epochs_description"],
+                                      val_index, x_val, val, key["brain_region_units_param_name"],
+                                      relationship, eps_labels, nwb_file_name_epochs_description))
+
+    # Get name of vals index
+    vals_index_name = check_return_single_element(vals_index_name_list).single_element
+
+    return df_from_data_list(
+        data_list, ["brain_region", "subject_id", "nwb_file_name", "epochs_description",
+                    "val_index", vals_index_name, "val", "brain_region_units_param_name",
+                    "relationship", "eps_labels", "nwb_file_name_epochs_description"])
+
+
 class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
 
     @staticmethod
@@ -1582,7 +1671,7 @@ class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
         df = parse_matrix(
             fr_vec_table().concat_across_epochs(key, metadata.vector_df_name), characteristics,
             fr_vec_table().metric_across_epochs(key, metric_name, vector_type),
-            _get_mask_across_epochs(metadata.vector_df_name), metric_name=metric_name, debug_mode=False,
+            _get_mask_across_epochs(metadata.vector_df_name), metric_name=metric_name, debug_mode=True,
             verbose=True)
 
         # Add x_pair_partner as column if working with difference vectors so can query df using this if desired. This
@@ -1631,7 +1720,7 @@ class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
             ]
 
         # Correct/incorrect trials by path
-        elif labels_description == "correct_incorrect_stay_trials":
+        elif labels_description in ["correct_incorrect_stay_trials", "correct_incorrect_stay_trials_pdaw"]:
             return [
                 "same_path_correct_correct_stay_trials", "same_path_correct_incorrect_stay_trials",
                 "same_path_incorrect_incorrect_stay_trials",
@@ -1645,6 +1734,10 @@ class CovariateFRVecSTAveBase(CovariateFRVecAveBase):
         # Same path comparison
         elif labels_description == "none":
             return ["same_path"]
+
+        elif "low_speed" in labels_description:
+            return ["same_path_low_speed_non_low_speed_trials", "same_path_non_low_speed_non_low_speed_trials",
+                    "same_path_low_speed_low_speed_trials"]
 
         # Raise error if labels description not accounted for
         else:
@@ -1820,10 +1913,15 @@ class PathWellPopSummBase(ComputedBase):
     def _get_same_different_outbound_path_correct_order_for_pairs(self):
         return ("outbound_correct_correct_trials", "same_path_outbound_correct_correct_trials")
 
+    def _get_non_low_speed_low_speed_order_for_pairs(self):
+        return ("same_path_low_speed_non_low_speed_trials",
+                "same_path_non_low_speed_non_low_speed_trials",
+                "same_path_low_speed_low_speed_trials")
+
     @classmethod
     def get_paired_metric_df(
             cls, metric_df, target_column_name, target_column_pairs, metric_pair_fn, resample_quantity="val",
-            exclude_columns=None):
+            exclude_columns=None, tolerate_nonoverlapping_column_sets=False):
         # Convert metric in df to paired metric
 
         print("Getting paired metric df...")
@@ -1840,17 +1938,25 @@ class PathWellPopSummBase(ComputedBase):
 
         common_column_sets_map = dict()  # store settings of columns (as dictionary) present for both values in pair
         print(f"len(target_column_pairs): {len(target_column_pairs)}")
+
         for x1, x2 in target_column_pairs:
             concat_df_subset = df_filter_columns(metric_df, {target_column_name: x1})
             column_sets_1 = unique_df_column_sets(concat_df_subset, column_names, as_dict=True)
             concat_df_subset = df_filter_columns(metric_df, {target_column_name: x2})
             column_sets_2 = unique_df_column_sets(concat_df_subset, column_names, as_dict=True)
+
+            # Raise error if nonoverlapping column sets (and not tolerating this)
             if len([x for x in column_sets_1 if x in column_sets_2]) == 0:
-                raise Exception(f"No overlapping column sets; this is not expected")
-            print(len(column_sets_2))
+                if tolerate_nonoverlapping_column_sets:
+                    continue
+                else:
+                    raise Exception(f"No overlapping column sets; this is not expected")
+
+            print(f"len(column_sets_2): {len(column_sets_2)}")
+
             common_column_sets_map[(x1, x2)] = [x for x in column_sets_1 if x in column_sets_2]
 
-        # Make new df with difference in values for brain region pairs
+        # Make new df with difference in values for pairs
 
         # Define column names in new df
         # ...Define new df columns, one for each member of pair
@@ -1867,15 +1973,24 @@ class PathWellPopSummBase(ComputedBase):
         for pair, common_column_sets in common_column_sets_map.items():
             print(f"len(common_column_sets): {len(common_column_sets)}")
             joint_column_pair_name = cls._get_joint_column_val(pair)
-            for column_set_idx, column_set in enumerate(common_column_sets):
-                print_iteration_progress(column_set_idx, len(common_column_sets), 100)
+            arg_sets = [(metric_pair_fn, metric_df, pair, column_set, target_column_name, resample_quantity, \
+            joint_column_pair_name) for column_set in common_column_sets]
+            pool = mp.Pool(mp.cpu_count())
+            data_list += pool.map(_get_metric_on_column_set, arg_sets)
+            pool.close()
+            pool.join()  # waits until all processes done before running next line
 
-                # Get metric on pairs of value at target column
-                val = metric_pair_fn(metric_df, pair, column_set, target_column_name, resample_quantity)
-
-                # Append to list
-                data_list.append(tuple(
-                    list(column_set.values()) + [joint_column_pair_name] + list(pair) + [val]))
+            # TODO: delete below
+            # data_list =
+            # for column_set_idx, column_set in enumerate(common_column_sets):
+            #     print_iteration_progress(column_set_idx, len(common_column_sets), 100)
+            #
+            #     # Get metric on pairs of value at target column
+            #     val = metric_pair_fn(metric_df, pair, column_set, target_column_name, resample_quantity)
+            #
+            #     # Append to list
+            #     data_list.append(tuple(
+            #         list(column_set.values()) + [joint_column_pair_name] + list(pair) + [val]))
 
         # Return new df
         # if empty df, return with column names
@@ -1905,7 +2020,8 @@ class PathWellPopSummBase(ComputedBase):
         boot_set_name = self.get_upstream_param("boot_set_name")
         if boot_set_name in params_table._valid_brain_region_diff_boot_set_names() + \
                             params_table._valid_stay_leave_diff_brain_region_diff_boot_set_names() + \
-                params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names():
+                params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names() + \
+                params_table._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
             return self._get_joint_column_name("brain_region")
 
         return "brain_region"
@@ -1933,6 +2049,9 @@ class PathWellPopSummBase(ComputedBase):
             "same_path_outbound_correct_correct_trials",
             "same_path_outbound_correct_correct_stay_trials",
             "outbound_correct_correct_stay_trials",
+
+            "same_path_low_speed_non_low_speed_trials", "same_path_low_speed_low_speed_trials",
+            "same_path_non_low_speed_non_low_speed_trials",
         ], [
 
             # Intermediate tint
@@ -1993,6 +2112,10 @@ class PathWellPopSummBase(ComputedBase):
             "same_path_correct_incorrect_stay_trials",
 
             "same_path_prev_correct_incorrect_trials",
+
+            "same_path_low_speed_non_low_speed_trials", "same_path_low_speed_low_speed_trials",
+            "same_path_non_low_speed_non_low_speed_trials",
+            "same_path_low_speed_non_low_speed_trials_same_path_non_low_speed_non_low_speed_trials"
 
         ], [
             # Medium tint
@@ -2287,7 +2410,7 @@ class PathWellPopSummBase(ComputedBase):
 
                 epoch_group_by_cols = [x for x in epoch_group_by_cols if x in metric_df.columns]
 
-                metric_epoch_df = metric_df.groupby(epoch_group_by_cols).mean().reset_index()
+                metric_epoch_df = metric_df.groupby(epoch_group_by_cols).mean(numeric_only=True).reset_index()
 
                 for subject_id in np.unique(metric_epoch_df["subject_id"]):
 
@@ -2315,7 +2438,7 @@ class PathWellPopSummBase(ComputedBase):
                                     alpha=line_alpha)
 
         # If brain region difference for one pair of brain regions, 1) add rectangles to denote brain region colors
-        # and 2) add black bar to denote significance
+        # and 2) add marker to denote significance
         if len(brain_region_vals) == 1 and brain_region_meta_name == "joint_brain_region" and not empty_plot:
 
             # Get brain region pair name
@@ -2348,12 +2471,26 @@ class PathWellPopSummBase(ComputedBase):
                 # 2) Add markers to denote significance
 
                 alpha = 0.05
-                bonferroni_val = alpha/len(set(df_subset.x_val))
+                num_bonferroni_trials = len(set(df_subset.x_val))
+                # For considering only samples prior to choice point, get appropriate bonferroni correct alpha
+                boot_set_name = self.get_upstream_param("boot_set_name")
+                params_table = self._get_params_table()
+                if boot_set_name in  params_table._valid_same_different_outbound_path_correct_diff_boot_set_names() + \
+                    params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names() + \
+                        params_table._valid_low_speed_non_low_speed_diff_boot_set_names() + \
+                        params_table._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
+                    choice_point_fraction = get_n_junction_path_junction_fractions(2)[0]
+                    num_bonferroni_trials = np.sum(np.unique(df_subset.x_val) < choice_point_fraction)
 
-                y_vals = [.8, .9]
+                bonferroni_val = alpha/num_bonferroni_trials
+
+                y_vals = [.15, .1]
 
                 for sig_val, color, y_scale_factor in zip(
                         [alpha, bonferroni_val], ["black", "gray"], y_vals):
+
+                    if sig_val not in set(df_subset.alpha):
+                        raise Exception(f"alpha {alpha} not in df_subset")
 
                     df_key = {"alpha": sig_val, "joint_brain_region": unpack_single_element(brain_region_vals)}
 
@@ -2364,22 +2501,22 @@ class PathWellPopSummBase(ComputedBase):
                     ave_conf_df_subset = df_filter_columns(df_subset, df_key).set_index("x_val").sort_index()
 
                     # Define y value
-                    y_val = ylim[1]*y_scale_factor
+                    y_val = ylim[1] - (ylim[1] - ylim[0])*y_scale_factor
 
                     # Check all indxs unique
                     check_all_unique(ave_conf_df_subset.index.values)
 
-                    # Get ranges where significant difference
-                    significant_idxs = np.where(ave_conf_df_subset.significant)[0]
-                    significant_spans, _ = find_spans_increasing_list(significant_idxs)
+                    plot_sig_type = "bars"
 
-                    significant_spans_list = []
-                    for start_idx, stop_idx in significant_spans:
+                    if plot_sig_type == "bars":
 
-                        if start_idx == stop_idx:
-                            # If only single point is significant, plot a line that extends a small way to the previous
-                            # x value and a small way to the next x value (otherwise nothing appears on plot, i.e.
-                            # line with zero extent does not appear)
+                        # Get ranges where significant difference
+                        significant_idxs = np.where(ave_conf_df_subset.significant)[0]
+                        significant_spans, _ = find_spans_increasing_list(significant_idxs)
+
+                        significant_spans_list = []
+                        for start_idx, stop_idx in significant_spans:
+
                             if start_idx == 0:
                                 x_start = ave_conf_df_subset.index[start_idx]
                             else:
@@ -2395,25 +2532,31 @@ class PathWellPopSummBase(ComputedBase):
                             # Store significant x vals so can print
                             significant_spans_list.append(ave_conf_df_subset.index[start_idx])
 
-                        else:
-                            # Define range
-                            x_vals = [ave_conf_df_subset.index[idx] for idx in [start_idx, stop_idx]]
+                            ax.plot(x_vals, [y_val]*2, color=color, linewidth=1.5)
 
-                            # Store significant x vals so can print
-                            significant_spans_list.append(x_vals)
+                        # Print significant values
+                        print(f"ALPHA: {sig_val}")
+                        print("SIGNIFICANT VALUES:")
+                        print(ave_conf_df_subset.index[significant_idxs].values)
+                        print("\n")
 
-                        ax.plot(x_vals, [y_val]*2, color=color, linewidth=1.5)
+                        # Print significant spans
+                        print("SIGNIFICANT SPANS:")
+                        print(significant_spans_list)
+                        print("\n")
 
-                    # Print significant values
-                    print(f"ALPHA: {sig_val}")
-                    print("SIGNIFICANT VALUES:")
-                    print(ave_conf_df_subset.index[significant_idxs].values)
-                    print("\n")
+                    elif plot_sig_type  == "stars":
 
-                    # Print significant spans
-                    print("SIGNIFICANT SPANS:")
-                    print(significant_spans_list)
-                    print("\n")
+                        # Get samples where significant difference
+                        significant_idxs = np.where(ave_conf_df_subset.significant)[0]
+                        x_vals = ave_conf_df_subset.index[significant_idxs]
+                        ax.plot(x_vals, [y_val] * len(x_vals), "*", color=color, linewidth=1.5)
+
+                        # Print significant values
+                        print(f"ALPHA: {sig_val}")
+                        print("SIGNIFICANT VALUES:")
+                        print(x_vals.values)
+                        print("\n")
 
         # If plot empty, remove axis if indicated
         if empty_plot and remove_axis_empty_plot:
@@ -2717,6 +2860,18 @@ class PathWellPopSummBase(ComputedBase):
         raise Exception(f"Must overwrite in child class")
 
 
+def _get_metric_on_column_set(arg_set):
+
+        metric_pair_fn, metric_df, pair, column_set, target_column_name, resample_quantity, \
+        joint_column_pair_name = arg_set
+
+        # Get metric on pairs of value at target column
+        val = metric_pair_fn(metric_df, pair, column_set, target_column_name, resample_quantity)
+
+        return tuple(
+            list(column_set.values()) + [joint_column_pair_name] + list(pair) + [val])
+
+
 class PathWellFRVecSummBase(PathWellPopSummBase):
 
     # Override parent class method so can add params specific to fr vec tables
@@ -2836,6 +2991,8 @@ class PathWellFRVecSummBase(PathWellPopSummBase):
         hierarchical_bootstrap.py
         """
 
+        print(f"Getting bootstrap difference parameters...")
+
         # Define inputs if not passed
         if exclude_columns is None:
             exclude_columns = []
@@ -2881,60 +3038,18 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
 
     def make(self, key):
 
-        verbose = True
-        tolerate_missing = False
+        print(f"Populating {self.table_name} for key {key}...")
 
         # Get params
-        metric_processing_name, label_name, brain_region_units_cohort_type, boot_set_name = (
-                self._get_params_table() & key).fetch1(
-            "metric_processing_name", "label_name", "brain_region_units_cohort_type", "boot_set_name")
-        brain_region_cohort_name = key["brain_region_cohort_name"]
-        zscore_fr = key["zscore_fr"]
-        res_epoch_spikes_sm_param_name = key["res_epoch_spikes_sm_param_name"]
-        unit_params = (BrainRegionUnitsCohortType & {
-            "brain_region_units_cohort_type": brain_region_units_cohort_type}).fetch1()
-        unit_subset_type = unit_params["unit_subset_type"]
-        unit_subset_size = unit_params["unit_subset_size"]
-        unit_subset_iterations = unit_params["unit_subset_iterations"]
-        min_epoch_mean_firing_rate = (EpsUnitsParams & unit_params).fetch1("min_epoch_mean_firing_rate")
+        boot_set_name = (self._get_params_table() & key).fetch1("boot_set_name")
 
-        # Get table
-        table = self._upstream_table()
+        print(f"Fetching metric_df...")
+        metric_df = (self._get_selection_table() & key).fetch1_dataframe()
 
-        # Get nwb file names and epochs_descriptions_names
-        nwb_file_names, epochs_descriptions_names = (RecordingSet & key).fetch1(
-            "nwb_file_names", "epochs_descriptions_names")
+        print(f"Getting bootstrap parameters...")
 
-        # Define kwargs
-        # TODO (feature): define programmatically based on upstream table
-        kwargs = {k: key[k] for k in [
-            "time_rel_wa_fr_vec_param_name", "time_rel_wa_dig_param_name",
-            "time_rel_wa_dig_single_axis_param_name",
-            "time_rel_wa_ave_fr_vec_param_name", "time_rel_wa_fr_vec_st_ave_param_name",
-            "path_fr_vec_param_name", "ppt_dig_param_name", "path_ave_fr_vec_param_name",
-            "path_fr_vec_st_ave_param_name", "multi_cov_fr_vec_param_name",
-            "multi_cov_fr_vec_st_ave_param_name", "multi_cov_ave_fr_vec_param_name"] if k in key}
-        kwargs.update({"label_name": label_name})
-
-        # Get metric values
-        nwb_file_names = nwb_file_names
-        if metric_processing_name == "one_minus_on_off_diagonal_ratio":
-            kwargs.update({"ratio_name": metric_processing_name})
-            metric_df = table().get_concat_same_diff_x_ratio_df(
-                nwb_file_names, epochs_descriptions_names, brain_region_cohort_name,
-                min_epoch_mean_firing_rate=min_epoch_mean_firing_rate, zscore_fr=zscore_fr,
-                res_epoch_spikes_sm_param_name=res_epoch_spikes_sm_param_name,
-                unit_subset_type=unit_subset_type, unit_subset_size=unit_subset_size,
-                unit_subset_iterations=unit_subset_iterations, verbose=verbose,
-                tolerate_missing=tolerate_missing, **kwargs)
-        else:
-            metric_df = table().get_concat_metric_df(
-                nwb_file_names, epochs_descriptions_names, brain_region_cohort_name,
-                min_epoch_mean_firing_rate=min_epoch_mean_firing_rate, zscore_fr=zscore_fr,
-                res_epoch_spikes_sm_param_name=res_epoch_spikes_sm_param_name,
-                unit_subset_type=unit_subset_type, unit_subset_size=unit_subset_size,
-                unit_subset_iterations=unit_subset_iterations, verbose=verbose,
-                tolerate_missing=tolerate_missing, **kwargs)
+        # Define name of value index
+        vals_index_name = self._get_vals_index_name(key=key)
 
         # Restrict to non-nan samples
         valid_bool = np.invert(np.isnan(metric_df.val))
@@ -2942,14 +3057,14 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
 
         # Hierarchical bootstrap and sample mean
         # Define bootstrap params as indicated
-        boot_params = (self._get_params_table()() & key).get_boot_params()
-
-        # Define name of value index
-        vals_index_name = self._get_vals_index_name(key=key)
+        bonferroni_num_tests = len(np.unique(metric_df[vals_index_name]))
+        boot_params = (self._get_params_table()() & key).get_boot_params(bonferroni_num_tests)
 
         # Define bootstrap parameters
         # NOTE: even though x_val is redundant with vals_index_name, we include it in ave_group_column_names
         # and ave_diff_group_column_names_ for convenience: so we can access in df when plotting
+        if "x_val" not in metric_df:
+            metric_df["x_val"] = metric_df[vals_index_name]
 
         # Params for all
         resample_quantity = "val"
@@ -3000,19 +3115,20 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
             # ...Get upstream table
             upstream_table = self._upstream_table()()
             # ...Initialize map
+            print("Getting split_eps_labels_map...")
             split_eps_labels_map = dict()
-            for upstream_key in (self._get_selection_table() & key).fetch1("upstream_keys"):
-                filter_key = {k: v for k, v in upstream_key.items() if k in metric_df.columns}
-                metric_df_subset = df_filter_columns(metric_df, filter_key)
-
-                for eps_labels in np.unique(metric_df_subset["eps_labels"]):
-                    epoch_1, epoch_2, label_1, label_2 = upstream_table._split_eps_labels(
-                        eps_labels, upstream_key["nwb_file_name"], include_reversed_pairs)
-                    label_1 = MazePathWell().split_stay_leave_trial_path_name(label_1)
-                    label_2 = MazePathWell().split_stay_leave_trial_path_name(label_2)
-                    split_eps_labels_map[eps_labels] = upstream_table._get_eps_labels(
-                        epoch_1, epoch_2, label_1, label_2)
-
+            eps_labels_list = np.unique(metric_df.eps_labels)
+            for idx, eps_labels in enumerate(eps_labels_list):
+                print_iteration_progress(idx, len(eps_labels_list), 20)
+                # can use any nwb file name so just take first
+                nwb_file_name = df_filter_columns(
+                    metric_df, {"eps_labels": eps_labels})["nwb_file_name"].values[0]
+                epoch_1, epoch_2, label_1, label_2 = upstream_table._split_eps_labels(
+                    eps_labels, nwb_file_name, include_reversed_pairs)
+                label_1 = MazePathWell().split_stay_leave_trial_path_name(label_1)
+                label_2 = MazePathWell().split_stay_leave_trial_path_name(label_2)
+                split_eps_labels_map[eps_labels] = upstream_table._get_eps_labels(
+                    epoch_1, epoch_2, label_1, label_2)
             # Remove stay/leave information from labels
             eps_labels_resample_col_name = "eps_labels_no_stay_leave_info"
             metric_df[eps_labels_resample_col_name] = [split_eps_labels_map[x] for x in metric_df["eps_labels"]]
@@ -3070,6 +3186,13 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
                 params_table._valid_same_different_outbound_path_correct_diff_boot_set_names() + \
                 params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names():
 
+            # For considering only samples prior to choice point, add appropriate bonferroni correct alpha
+            choice_point_fraction = get_n_junction_path_junction_fractions(2)[0]
+            num_samples_pre_choice_point = np.sum(np.unique(metric_df[vals_index_name]) < choice_point_fraction)
+            new_alpha = .05/num_samples_pre_choice_point
+            new_alphas = np.sort(list(boot_params.alphas) + [new_alpha])
+            boot_params = boot_params._replace(alphas=new_alphas)
+
             # We want to take difference of values for the same outbound path across correct/correct trials and
             # and different outbound paths across correct/correct trials.
             # The function _get_boot_diff_params takes a df with values to be subtracted. Entries with pairs of
@@ -3101,6 +3224,74 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
                     target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
                     eps_labels_resample_col_name, debug_mode=False)
 
+        # 7) Average difference of non low speed / non low speed values (metric computed for pairs of non low speed
+        # trials) and non low speed / low speed values (metric computed for pairs of non low speed and low speed trials)
+        # 8) Average difference of non low speed / non low speed values and non low speed / low speed
+        # values across brain regions
+        elif boot_set_name in params_table._valid_low_speed_non_low_speed_diff_boot_set_names() + \
+               params_table._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
+
+            # For considering only samples prior to choice point, add appropriate bonferroni correct alpha
+            choice_point_fraction = get_n_junction_path_junction_fractions(2)[0]
+            num_samples_pre_choice_point = np.sum(np.unique(metric_df[vals_index_name]) < choice_point_fraction)
+            new_alpha = .05/num_samples_pre_choice_point
+            new_alphas = np.sort(list(boot_params.alphas) + [new_alpha])
+            boot_params = boot_params._replace(alphas=new_alphas)
+
+            # We want to take difference of values for the same path or well, across non low speed / non low speed
+            # and non low speed / low speed cases.
+            # The function _get_boot_diff_params takes a df with values to be subtracted. Entries with pairs of
+            # values to be subtracted differ at only a target column (here, the column 'relationship' which indicates
+            # whether the metric is on non low speed / non low speed or non low speed / low speed trials).
+            # All other columns should have the same values across the pair.
+            # To achieve this, we must remove from information about trial types (non low speed or low speed)
+            # from eps_labels. eps_labels contains information about the pair of epochs, trial types
+            # (non low speed or low speed) and path names on which the metric was computed.
+
+            target_column_name = "relationship"
+            pairs_order = self._get_non_low_speed_low_speed_order_for_pairs()
+
+            # Get map from eps_labels to a version where label_1 and label_2 have non low speed / low speed
+            # information removed
+            # ...Include pairs of labels in either order ((label_1, label_2) or (label_2, label_1)) since either order
+            # can be encountered.
+            include_reversed_pairs = True
+            # ...Get upstream table
+            upstream_table = self._upstream_table()()
+            # ...Initialize map
+            split_eps_labels_map = dict()
+            eps_labels_list = np.unique(metric_df.eps_labels)
+            for idx, eps_labels in enumerate(eps_labels_list):
+                print_iteration_progress(idx, len(eps_labels_list), 20)
+                # can use any nwb file name so just take first
+                nwb_file_name = df_filter_columns(
+                    metric_df, {"eps_labels": eps_labels})["nwb_file_name"].values[0]
+                epoch_1, epoch_2, label_1, label_2 = upstream_table._split_eps_labels(
+                    eps_labels, nwb_file_name, include_reversed_pairs)
+                label_1 = MazePathWell().split_non_low_speed_low_speed_trial_path_name(label_1)
+                label_2 = MazePathWell().split_non_low_speed_low_speed_trial_path_name(label_2)
+                split_eps_labels_map[eps_labels] = upstream_table._get_eps_labels(
+                    epoch_1, epoch_2, label_1, label_2)
+
+            # Remove non low speed / low speed information from labels
+            eps_labels_resample_col_name = "eps_labels_no_non_low_speed_low_speed_info"
+            metric_df[eps_labels_resample_col_name] = [split_eps_labels_map[x] for x in metric_df["eps_labels"]]
+            exclude_columns = ["eps_labels", "label_1", "label_2"]
+
+            metric_df, resample_levels, ave_group_column_names = self._get_boot_diff_params(
+                target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
+                eps_labels_resample_col_name=eps_labels_resample_col_name, exclude_columns=exclude_columns,
+                debug_mode=False)
+
+            # Now take brain region difference if indicated
+            if boot_set_name in params_table._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
+
+                target_column_name = "brain_region"
+                pairs_order = self._get_brain_region_order_for_pairs()
+                metric_df, resample_levels, ave_group_column_names = self._get_boot_diff_params(
+                    target_column_name, metric_df, pairs_order, vals_index_name, boot_set_name,
+                    eps_labels_resample_col_name, debug_mode=False)
+
         # Raise error if boot set name not accounted for
         else:
             raise Exception(f"Have not written code for boot_set_name {boot_set_name}")
@@ -3123,13 +3314,11 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
         # Insert into main table
         insert_analysis_table_entry(self, list(results_dict.values()), key)
 
-        # Insert into parts tables
-        for upstream_key in (self._get_selection_table() & key).fetch1("upstream_keys"):
-            insert1_print(self.Upstream, {**key, **upstream_key})
-
     def _get_eps_labels_ave_metric_df(self, metric_df, resample_quantity):
         # Average across eps_labels in metric_df. Meant to be used in cases where comparing relationships
         # whose eps_labels dont have a direct correspondence (e.g. same path vs. outbound paths)
+
+        print(f"Averaging across eps_labels in metric_df...")
 
         # Get unique settings of columns within which we want to average
         column_sets = unique_df_column_sets(metric_df, [
@@ -3137,15 +3326,13 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
                 "eps_labels", "label_1", "label_2", resample_quantity]], as_dict=True)
 
         # Assemble df
-        data_list = []
-        for column_set in column_sets:
-            # Find average across eps_labels
-            df_subset = df_filter_columns(metric_df, column_set)
-            ave_val = np.mean(df_subset.val)
-            df_entry = list(column_set.values()) + ["^".join(df_subset.eps_labels), ave_val]
-            data_list.append(df_entry)
+        pool = mp.Pool(mp.cpu_count())
+        data_list = pool.map(_average_across, [(metric_df, x) for x in column_sets])
+        pool.close()
+        pool.join()  # waits until all processes done before running next line
+
         eps_labels_resample_col_name = "eps_labels_joined"
-        eps_labels_ave_metric_df = df_from_data_list(data_list, list(column_set.keys()) + [
+        eps_labels_ave_metric_df = df_from_data_list(data_list, list(column_sets[0].keys()) + [
             eps_labels_resample_col_name, resample_quantity])
         exclude_columns = [eps_labels_resample_col_name]
         return namedtuple("EpsLabelsAve", "eps_labels_ave_metric_df exclude_columns eps_labels_resample_col_name")(
@@ -3171,7 +3358,9 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
             params_table._valid_stay_leave_diff_boot_set_names() + \
             params_table._valid_stay_leave_diff_brain_region_diff_boot_set_names() + \
             params_table._valid_same_different_outbound_path_correct_diff_boot_set_names() + \
-            params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names():
+            params_table._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names() + \
+            params_table._valid_low_speed_non_low_speed_diff_boot_set_names() + \
+            params_table._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
             return self._get_joint_column_name("relationship")
 
         return "relationship"
@@ -3299,6 +3488,14 @@ class CovariateFRVecAveSummBase(PathWellFRVecSummBase):
         return param_sets
 
 
+def _average_across(metric_df_column_set):
+    metric_df, column_set = metric_df_column_set
+    # Find average across eps_labels
+    df_subset = df_filter_columns(metric_df, column_set)
+    ave_val = np.mean(df_subset.val)
+    return list(column_set.values()) + ["^".join(df_subset.eps_labels), ave_val]
+
+
 class CovariateAveFRVecSummBase(CovariateFRVecAveSummBase):
 
     def _get_val_lims(self):
@@ -3404,6 +3601,10 @@ class PathFRVecSummBase(CovariateFRVecAveSummBase):
             "same_path_incorrect_incorrect_trials", "outbound_correct_correct_trials",
             "outbound_correct_incorrect_trials", "outbound_incorrect_incorrect_trials",
             "outbound_correct_correct_trials_same_path_outbound_correct_correct_trials",
+            'same_path_low_speed_low_speed_trials',
+            'same_path_low_speed_non_low_speed_trials',
+            'same_path_non_low_speed_non_low_speed_trials',
+            "same_path_non_low_speed_non_low_speed_trials_same_path_low_speed_low_speed_trials"
         ]
 
     def _get_x_lims(self):
@@ -3446,7 +3647,14 @@ class TimeRelWAFRVecSummBase(CovariateFRVecAveSummBase):
             "different_end_well_even_odd_stay_trials_same_end_well_even_odd_stay_trials",
             "same_path_stay_stay_trials", "same_path_stay_leave_trials", "same_path_leave_leave_trials",
             "same_path_stay_leave_trials_same_path_stay_stay_trials",
-            "outbound_correct_correct_trials_same_path_outbound_correct_correct_trials"
+            "outbound_correct_correct_trials_same_path_outbound_correct_correct_trials",
+
+            'outbound_correct_correct_stay_trials',
+            'outbound_correct_incorrect_stay_trials',
+            'same_path_correct_correct_stay_trials',
+            'same_path_correct_incorrect_stay_trials',
+            'same_path_incorrect_incorrect_stay_trials',
+            'same_path_outbound_correct_correct_stay_trials'
         ]
 
     def _get_x_lims(self):
@@ -3585,6 +3793,17 @@ class PopulationAnalysisParamsBase(ParamsBase):
         param_name = "same_different_outbound_path_correct_diff_brain_region_diff"
         return [param_name, f"{param_name}_rat_cohort"]
 
+    @staticmethod
+    def _valid_low_speed_non_low_speed_diff_boot_set_names():
+        # All valid low speed vs. non low speed correct trial boot set names
+        param_name = "low_speed_non_low_speed_diff"
+        return [param_name, f"{param_name}_rat_cohort"]
+
+    @staticmethod
+    def _valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names():
+        param_name = "low_speed_non_low_speed_diff_brain_region_diff"
+        return [param_name, f"{param_name}_rat_cohort"]
+
     def _boot_set_names(self):
         # Boot set names to populate table with. Use different set depending on child class.
         return self._valid_default_boot_set_names()
@@ -3631,7 +3850,7 @@ class PopulationAnalysisSelBase(SelBase):
     def _recording_set_name_types(self):
         return [
             "Haight_rotation", "Haight_rotation_rat_cohort", "single_epoch_testing",
-            "Haight_rotation_handleAlternation"]
+            "Haight_rotation_handleAlternation", "first_day_learning_single_epoch"]
 
     def get_recording_set_names(self, key_filter):
         # Return list of recording set names for a given key_filter, for use in populating tables
@@ -3708,6 +3927,9 @@ class PopulationAnalysisSelBase(SelBase):
 
                 if verbose:
                     print(f"\nOn recording_set_name {recording_set_name}...")
+
+                if "J1620210529" in recording_set_name:  # !!!!!!! temporary until process CA1 data
+                    brain_region_cohort_name = "mPFC_targeted_OFC_targeted"
 
                 # Get nwb file names and epochs descriptions for this recording set
                 nwb_file_names, epochs_descriptions_names = (
@@ -3856,47 +4078,66 @@ class PopulationAnalysisSelBase(SelBase):
 
 class CovariateFRVecAveSummSelBase(PopulationAnalysisSelBase):
 
+    # TODO: drop other tables dependent on CovariateFRVecAveSummSelBase and reinitialize with Upstream table as
+    #  part of the Sel table
+    def insert1(self, key, **kwargs):
+
+        # Only populate if no entry in main table. Alternative is to set skip_insertion to True for part table,
+        # but would prevent catching undesired duplicate entries
+        table_key = {k: v for k, v in key.items() if k in self.primary_key}  # just check for match at primary key
+
+        if len(self & table_key) == 0:
+
+            # Concatenate performance dfs across entries
+            metric_processing_name = (self._get_params_table() & table_key).fetch1("metric_processing_name")
+            kwargs = {"metric_processing_name": metric_processing_name}
+            df_concat = self._get_main_table()()._upstream_table()().get_concat_metric_df(
+                key["upstream_keys"], **kwargs)
+
+            # Raise error if df is empty and this is not expected
+            expected_empty_df_concat_keys = [
+            ]
+
+            if len(df_concat) == 0 and key not in expected_empty_df_concat_keys:
+                raise Exception(f"df_concat is empty. This is not expected")
+
+            # Insert into main table
+            key = insert_analysis_table_entry(self, [df_concat], key, skip_insertion=True)
+            super().insert1(key, skip_duplicates=True)
+
+            # Insert into part table
+            upstream_keys = key.pop("upstream_keys")
+            key_subset = {k: v for k, v in key.items() if k not in ["analysis_file_name", "df_concat_object_id"]}
+            for upstream_key in upstream_keys:
+                self.Upstream.insert1({**key_subset, **upstream_key})
+
     def _get_param_name_map(self, key_filter, brain_region_units_cohort_types):
 
         # Define summary table param name based on cov_fr_vec_param_name, distance metric, and recording set name.
         # To do this, define map from cov_fr_vec_param_name, distance metric, recording set name,
         # and brain_region_units_cohort_type to summary table param names
-        cov_fr_vec_param_names = self._default_cov_fr_vec_param_names()
 
         params_table = self._get_params_table()()
 
-        recording_set_names_boot_set_names = [
-
-         # Rat cohort
-         (RecordingSet().lookup_rat_cohort_set_name(), boot_set_name)
-         for boot_set_name in self._default_cohort_boot_set_names()] + [
-
-         # Non rat cohort
-         (recording_set_name, boot_set_name) for recording_set_name in
-         RecordingSet().get_recording_set_names(
-             key_filter, ["Haight_rotation", "single_epoch_testing"])
-         for boot_set_name in self._default_noncohort_boot_set_names()]
+        recording_set_names_boot_set_names_cov_fr_vec_param_names = \
+            self._default_recording_set_names_boot_set_names_cov_fr_vec_param_names()
 
         metric_names_metric_processing_names = [
             ("cosine_similarity", "none"), ("euclidean_distance", "one_minus_on_off_diagonal_ratio")]
 
         param_name_map = dict()
-        for recording_set_name, boot_set_name in recording_set_names_boot_set_names:
+        for recording_set_name, boot_set_name, cov_fr_vec_param_name in recording_set_names_boot_set_names_cov_fr_vec_param_names:
             for metric_name, metric_processing_name in metric_names_metric_processing_names:
-                # TODO: avoid pairing the following:
-                # 1) 'path_fr_vec_param_name': 'none',
-                # 2) 'path_fr_vec_st_ave_summ_param_name': 'one_minus_on_off_diagonal_ratio^path^same_different_outbound_path_correct_diff_brain_region_diff^0.1_1_rand_target_region_50_iterations_0to9'
-                for cov_fr_vec_param_name in cov_fr_vec_param_names:
-                    for brain_region_units_cohort_type in brain_region_units_cohort_types:
-                        param_name_map_key = self._format_param_name_map_key(
-                            cov_fr_vec_param_name=cov_fr_vec_param_name, metric_name=metric_name,
-                            recording_set_name=recording_set_name,
-                            brain_region_units_cohort_type=brain_region_units_cohort_type)
-                        if param_name_map_key not in param_name_map:
-                            param_name_map[param_name_map_key] = []
-                        param_name_map[param_name_map_key] += [params_table.lookup_param_name(
-                            [metric_processing_name, label_name, boot_set_name, brain_region_units_cohort_type])
-                            for label_name in params_table._default_label_names()]
+                for brain_region_units_cohort_type in brain_region_units_cohort_types:
+                    param_name_map_key = self._format_param_name_map_key(
+                        cov_fr_vec_param_name=cov_fr_vec_param_name, metric_name=metric_name,
+                        recording_set_name=recording_set_name,
+                        brain_region_units_cohort_type=brain_region_units_cohort_type)
+                    if param_name_map_key not in param_name_map:
+                        param_name_map[param_name_map_key] = []
+                    param_name_map[param_name_map_key] += [params_table.lookup_param_name(
+                        [metric_processing_name, label_name, boot_set_name, brain_region_units_cohort_type])
+                        for label_name in params_table._default_label_names()]
 
         return param_name_map
 

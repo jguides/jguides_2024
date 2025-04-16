@@ -9,7 +9,8 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_analysis_helpers import get_
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_base import SecKeyParamsBase, SelBase, ComputedBase
 from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert1_print, \
     get_table_secondary_key_names, get_unit_name, split_unit_names, \
-    get_key_filter, split_curation_name, delete_, get_default_param, split_unit_name, make_param_name, get_table_name
+    get_key_filter, split_curation_name, delete_, get_default_param, split_unit_name, make_param_name, get_table_name, \
+    get_epochs_id
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.metadata.jguidera_brain_region import SortGroupTargetedLocation, BrainRegionSortGroup, \
     BrainRegionCohort, CurationSet, \
@@ -56,7 +57,8 @@ class EpsUnitsSel(SelBase):
     curation_name : varchar(80)
     """
 
-    def _get_potential_keys(self, key_filter=None):
+    def _get_potential_keys(self, key_filter=None, verbose=True):
+
         # Insert defaults
         if key_filter is None:
             key_filter = dict()
@@ -66,18 +68,15 @@ class EpsUnitsSel(SelBase):
         # curation names that correspond to epochs that encompass epochs in cohort. Achieve
         # by defining specific cases we want using curation set
         brain_region_cohort_name = "all_targeted"
-        curation_set_name = "runs_analysis_v1"
+        curation_set_name = "runs_analysis_v2"
         brain_region_sort_group_id_map = BrainRegionSortGroup().get_brain_region_sort_group_id_map()
+
+        if verbose:
+            print("brain_region_sort_group_id_map: ", brain_region_sort_group_id_map)
 
         # Define keys to loop through
         keys = super()._get_potential_keys(key_filter)
         num_keys = len(keys)
-
-        # Print out progress if large number of keys
-        large_num_keys_thresh = 1000
-        verbose = False
-        if num_keys > large_num_keys_thresh:
-            verbose = True
 
         if verbose:
             print(f"Looping through {num_keys} keys...")
@@ -89,9 +88,12 @@ class EpsUnitsSel(SelBase):
                 print_iteration_progress(idx, num_keys, 20)
 
             nwb_file_name = key["nwb_file_name"]
-            brain_region_sort_group_id_map_subset = df_filter_columns(brain_region_sort_group_id_map, {
-                "nwb_file_name": nwb_file_name, "sort_group_id": key["sort_group_id"]})
+            df_key = {
+                "nwb_file_name": nwb_file_name, "sort_group_id": key["sort_group_id"]}
+            brain_region_sort_group_id_map_subset = df_filter_columns(brain_region_sort_group_id_map, df_key)
             if len(brain_region_sort_group_id_map_subset) == 0:
+                if verbose:
+                    print(f"no entry in brain_region_sort_group_id_map_subset for df_key, continuing...")
                 continue
             brain_region = unpack_single_element(brain_region_sort_group_id_map_subset["brain_region"].values)
 
@@ -102,31 +104,94 @@ class EpsUnitsSel(SelBase):
                 continue
             epochs = (EpochCohort & key).fetch1("epochs")
 
-            # Case 1: individual run epochs
-            if len(epochs) == 1:
-                table_subset = (CurationSet() & {
-                    "nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
-                    "curation_set_name": curation_set_name})
-                if len(table_subset) > 0:
+            curation_key = {
+                "nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
+                "curation_set_name": curation_set_name}
+            table_subset = (CurationSet() & curation_key)
 
-                    curation_set_df = table_subset.fetch1_dataframe()
+            if len(table_subset) == 0 and verbose:
+                print(f"no entry in CurationSet for curation_key {curation_key}")
 
-                    epoch = (EpochCohort & key).get_epoch()
-                    if epoch in (RunEpoch & {"nwb_file_name": nwb_file_name, "epoch": epoch}).fetch("epoch"):
-                        epochs_description = EpochsDescription().get_single_run_description(
-                            nwb_file_name, epoch)
-                        curation_name = df_pop(
-                            curation_set_df, {"brain_region": brain_region, "epochs_description": epochs_description},
-                                               "curation_name")
-                        curation_epochs = DefineSortInterval.get_epochs_for_curation_name(nwb_file_name, curation_name)
+            if len(table_subset) > 0:
 
-                        epoch_mean_fr_populated = all([len(EpochMeanFiringRate & {**key, **{
-                            "epoch": epoch, "curation_name": curation_name}}) > 0 for epoch in epochs])
-                        valid_epochs = all([x in curation_epochs for x in epochs])
+                curation_set_df = table_subset.fetch1_dataframe()
 
-                        if epoch_mean_fr_populated and valid_epochs:
-                            key.update({"curation_name": curation_name})
-                            potential_keys.append(copy.deepcopy(key))
+                epoch_mean_fr_populated = True
+                valid_epochs = True
+                curation_names = []
+                for epoch in epochs:
+
+                    eps_description_key = {"nwb_file_name": nwb_file_name, "epochs_id": get_epochs_id([epoch])}
+
+                    eps_description_table_subset = (EpochsDescription & eps_description_key)
+
+                    if len(eps_description_table_subset) == 0:
+                        valid_epochs = 0
+                        continue
+
+                    epochs_description = eps_description_table_subset.fetch1("epochs_description")
+
+                    curation_name = df_pop(
+                        curation_set_df, {"brain_region": brain_region, "epochs_description": epochs_description},
+                        "curation_name")
+
+                    curation_names.append(curation_name)
+
+                    curation_epochs = DefineSortInterval.get_epochs_for_curation_name(nwb_file_name, curation_name)
+
+                    epoch_mean_fr_populated *= len(EpochMeanFiringRate & {**key, **{
+                        "epoch": epoch, "curation_name": curation_name}}) > 0
+
+                    valid_epochs *= epoch in curation_epochs
+
+                if epoch_mean_fr_populated and valid_epochs:
+                    unique_curation_names = np.unique(curation_names)
+                    if len(unique_curation_names) > 1 and verbose:
+                        print(f"len(unique_curation_names) > 1. Continuing...")
+                        continue
+                    else:
+                        print(f"Adding key...")
+                        key.update({"curation_name": curation_names[0]})
+                        potential_keys.append(copy.deepcopy(key))
+
+                else:
+                    if verbose:
+                        print(f"Need both EpochMeanFiringRate populated for this key and all valid epochs."
+                              f"Condition not met. epoch_mean_fr_populated: {epoch_mean_fr_populated} "
+                              f"valid_epochs: {valid_epochs}")
+
+                # TODO: delete the code commented out below
+                # Case 1: individual run epochs
+                # if len(epochs) == 1:
+                #
+                #     epoch = epochs[0]
+                #
+                #     if epoch in (RunEpoch & {"nwb_file_name": nwb_file_name, "epoch": epoch}).fetch("epoch"):
+                #
+                #         epochs_description = EpochsDescription().get_single_run_description(
+                #             nwb_file_name, epoch)
+                #
+                #         curation_name = df_pop(
+                #             curation_set_df, {"brain_region": brain_region, "epochs_description": epochs_description},
+                #                                "curation_name")
+                #
+                #         curation_epochs = DefineSortInterval.get_epochs_for_curation_name(nwb_file_name, curation_name)
+                #
+                #         epoch_mean_fr_populated = all([len(EpochMeanFiringRate & {**key, **{
+                #             "epoch": epoch, "curation_name": curation_name}}) > 0 for epoch in epochs])
+                #
+                #         valid_epochs = all([x in curation_epochs for x in epochs])
+                #
+                #         if epoch_mean_fr_populated and valid_epochs:
+                #             key.update({"curation_name": curation_name})
+                #             potential_keys.append(copy.deepcopy(key))
+                #
+                # # Case 2: multiple run epochs
+                # (EpochsDescription & key)
+                # # Check that curation name the same across epochs
+                # else:
+                #     raise Exception
+
         return potential_keys
 
 
@@ -465,21 +530,29 @@ class BrainRegionUnitsSel(SelBase):
         return check_membership(sort_group_ids, eps_units_sort_group_ids, "sort group ids in BrainRegionSortGroup",
                                 "sort group ids in EpsUnits", tolerate_error)
 
-    def _get_potential_keys(self, key_filter=None):
-
-        key_filter = get_key_filter(key_filter)
+    def _get_potential_keys(self, key_filter=None, verbose=True):
 
         valid_brain_region_cohort_name = "all_targeted"
-        valid_curation_set_name = "runs_analysis_v1"
+        valid_curation_set_name = "runs_analysis_v2"
+        valid_brain_regions = ["mPFC_targeted", "OFC_targeted", "CA1_targeted"]
 
         # Populate upstream tables
         EpochsDescription().insert_defaults(key_filter=key_filter)
         keys = []
         for k1 in ((JguideraNwbfile * BrainRegionSortGroup) & key_filter).fetch("KEY"):
 
+            if k1["brain_region"] not in valid_brain_regions:
+                continue
+
+            if verbose:
+                print(f"On k1 {k1}...")
+
             k1.update(key_filter)
 
             for k2 in (EpochsDescription & k1).fetch("KEY"):
+
+                if verbose:
+                    print(f"On k2 {k2}...")
 
                 k2.update(k1)
 
@@ -491,11 +564,16 @@ class BrainRegionUnitsSel(SelBase):
 
                 for k3 in brup_keys:
 
+                    if verbose:
+                        print(f"On k3 {k3}...")
+
                     k3.update(k2)
 
                     curation_names = set((EpsUnits & self.get_eps_units_key(k3)).fetch("curation_name"))
 
                     if len(curation_names) == 0:
+                        if verbose:
+                            print(f"curation_names is empty, continuing...")
                         continue
 
                     # Limit to desired curation name
@@ -503,19 +581,39 @@ class BrainRegionUnitsSel(SelBase):
                         "nwb_file_name": k3["nwb_file_name"],
                         "brain_region_cohort_name": valid_brain_region_cohort_name,
                         "curation_set_name": valid_curation_set_name}
-                    valid_curation_name = (CurationSet & curation_set_key).get_curation_name(
-                        k3["brain_region"], k3["epochs_description"], tolerate_no_entry=True)
-                    if valid_curation_name is None:
+                    table_subset = (CurationSet & curation_set_key)
+
+                    # ...continue if no entry in CurationSet
+                    if len(table_subset) == 0:
+                        if verbose:
+                            print(f"no entry in CurationSet, continuing...")
                         continue
 
+                    epochs = (EpochsDescription & k3).fetch1("epochs")
+                    single_epochs_descriptions = [EpochsDescription().get_single_run_description(
+                        k3["nwb_file_name"], epoch) for epoch in epochs]
+
+                    valid_curation_names = [table_subset.get_curation_name(
+                        k3["brain_region"], epochs_description, tolerate_no_entry=True)
+                        for epochs_description in single_epochs_descriptions]
+                    valid_curation_names = [x for x in valid_curation_names if x is not None]
+                    if len(valid_curation_names) == 0:
+                        raise Exception(f"valid_curation_names is empty")
+                    valid_curation_name = check_return_single_element(valid_curation_names).single_element
                     curation_names = [x for x in curation_names if x == valid_curation_name]
+                    if len(curation_names) == 0:
+                        print(f"curation_names is empty. Continuing...")
 
                     for curation_name in curation_names:
+
+                        if verbose:
+                            print(f"On curation_name {curation_name}...")
 
                         k3.update({"curation_name": curation_name})
 
                         # Insert into table if all sort group ids present
                         if self.check_sort_group_ids_present(k3):
+                            print(f"Adding key...")
                             keys.append({k: v for k, v in k3.items() if k in self.primary_key})
 
         # Return keys
@@ -586,13 +684,18 @@ class BrainRegionUnits(ComputedBase):
         # Get electrode groups in this brain region
         targeted_location = get_targeted_location_from_brain_region(key["brain_region"])
         nwb_file_name = key["nwb_file_name"]
-        electrode_group_names = (ElectrodeGroupTargetedLocation & {
-            "nwb_file_name": nwb_file_name, "targeted_location": targeted_location}).fetch(
-            "electrode_group_name")
+        table_subset = (ElectrodeGroupTargetedLocation & {
+            "nwb_file_name": nwb_file_name, "targeted_location": targeted_location})
+        if len(table_subset) == 0:
+            raise Exception(f"ElectrodeGroupTargetedLocation has no entries for {nwb_file_name}, {targeted_location}")
+        electrode_group_names = table_subset.fetch("electrode_group_name")
 
         # Initialize key for querying table with valid shank length information
         subject_id = get_subject_id(key["nwb_file_name"])
         hist_key = {"subject_id": subject_id}
+
+        # Get sort_interval_name from curation_name
+        sort_interval_name, _ = split_curation_name(key["curation_name"])
 
         # ...All units
         sort_group_unit_ids_map = (EpsUnits & eps_units_key).get_sort_group_unit_ids_map(
@@ -648,9 +751,13 @@ class BrainRegionUnits(ComputedBase):
                     valid_chs += list(electrode_ids[LivermoreD2().get_valid_idxs(
                         below_dorsal_limit_lens, below_ventral_limit_lens)])
 
+                if len(valid_chs) == 0:
+                    raise Exception(f"No valid_chs found. This is unexpected.")
+
                 # Update units to be those within valid range from probe tip to edge of target region
                 for sort_group_id, unit_ids in sort_group_unit_ids_map.items():
-                    peak_ch_map = get_peak_ch_map(key["nwb_file_name"], sort_group_id)  # map from unit id to peak ch
+                    # Get map from unit id to peak ch
+                    peak_ch_map = get_peak_ch_map(key["nwb_file_name"], sort_group_id, sort_interval_name)
                     valid_unit_ids = [unit_id for unit_id, peak_ch in peak_ch_map.items() if peak_ch in valid_chs]
                     sort_group_unit_ids_map[sort_group_id] = [x for x in unit_ids if x in valid_unit_ids]
 
@@ -719,7 +826,7 @@ class BrainRegionUnits(ComputedBase):
             for sort_group_id, unit_ids in sort_group_unit_ids_map.items():
                 for unit_id in unit_ids:
                     data_list.append(
-                        (get_unit_name(sort_group_id, unit_id), brain_region, sort_group_id, unit_id,curation_name))
+                        (get_unit_name(sort_group_id, unit_id), brain_region, sort_group_id, unit_id, curation_name))
 
         return df_from_data_list(data_list, [
             "unit_name", "brain_region", "sort_group_id", "unit_id", "curation_name"]).set_index("unit_name")

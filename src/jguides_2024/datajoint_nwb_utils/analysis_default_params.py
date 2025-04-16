@@ -21,7 +21,7 @@ def get_glm_default_params_map():
     epoch_time_bins_param_name = EpochTimeBinsParams().lookup_param_name([time_bin_width])
 
     # DELAY
-    delay_time_bins_shorthand = "delay_stay_20ms"
+    delay_time_bins_shorthand = "delay_stay_100ms"
     delay_res_time_bins_pool_param_name = ResTimeBinsPoolSel().lookup_param_name_from_shorthand(
         delay_time_bins_shorthand)
     time_covariate_bin_width = .1  # this is distinct from time bin related to sampling rate

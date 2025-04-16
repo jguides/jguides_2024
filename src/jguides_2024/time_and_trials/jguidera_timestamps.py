@@ -28,6 +28,13 @@ class EpochTimestamps(ComputedBase):
         error_tolerance_expected_vs_estimated_fs = .5
         tolerance_distance_to_epoch_bounds = .005
 
+        # For some nwb files, for some reason there is a larger distance between times in
+        # interval list called "valid_times" in IntervalList, and first or last epoch timestamps, than tolerated
+        # (i.e. than tolerance_distance_to_epoch_bounds). Make exception for the following sessions to allow population
+        # of table:
+        if key["nwb_file_name"] in ["fig20211104_.nwb"]:
+            tolerance_distance_to_epoch_bounds = .02
+
         # Get sample times during epoch (in PTP and Trodes time)
         nwbf = get_nwb_file(key["nwb_file_name"])
         epoch_sample_times_df = pd.DataFrame.from_dict(get_epoch_timestamps_nwbf(nwbf=nwbf,

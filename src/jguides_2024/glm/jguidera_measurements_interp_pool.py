@@ -46,9 +46,11 @@ class InterceptSel(SelBase):
 
     def _get_potential_keys(self, key_filter=None):
         keys = super()._get_potential_keys(key_filter)
-        valid_res_time_bins_pool_param_names = [ResTimeBinsPoolSel().lookup_param_name_from_shorthand(
-            x) for x in ["path_20ms", "delay_stay_20ms"]  # for GLM analysis
-        ]
+        from src.jguides_2024.datajoint_nwb_utils.analysis_default_params import get_glm_default_params_map
+        glm_default_params_map = get_glm_default_params_map()
+        valid_res_time_bins_pool_param_names = [
+            glm_default_params_map["delay_res_time_bins_pool_param_name"],
+            glm_default_params_map["path_res_time_bins_pool_param_name"]]  # for GLM analysis
         return [k for k in keys if
                 k["res_time_bins_pool_param_name"] in valid_res_time_bins_pool_param_names]
 
@@ -246,27 +248,34 @@ class XInterpPoolCohortParams(PoolCohortParamsBase):
 
         return shorthand_params_map
 
-    def insert_glm_defaults(self):
+    def insert_glm_defaults(self, **kwargs):
 
         # Populate cohort table with intercept and single entries for ppt (PptRCB) and time in delay period
         # (TimeRelWARCB) for GLM analysis
         shorthand_params_map = self.get_shorthand_params_map()
 
+        key_filter = dict()
+        if "key_filter" in kwargs:
+            key_filter = kwargs["key_filter"]
+
         # Loop through potential keys and insert. We hold everything from XInterpPoolSel except
         # x_interp_pool_param_name constant. We add a list of x_interp_pool_param_names that make up the cohort.
         for params in shorthand_params_map.values():
             for key in unique_table_column_sets(
-                    XInterpPoolSel, [x for x in XInterpPoolSel.primary_key if x != "x_interp_pool_param_name"],
-                    as_dict=True):
+                    XInterpPoolSel & key_filter, [
+                        x for x in XInterpPoolSel().primary_key if x != "x_interp_pool_param_name"], as_dict=True):
                 # Only proceed if upstream table fully populated for the current case
                 if all([len(XInterpPool & {**key, **{"x_interp_pool_param_name": x_interp_pool_param_name}}) > 0
                         for x_interp_pool_param_name in params.x_interp_pool_param_names]):
                     secondary_key_subset_map = {"x_interp_pool_param_names": params.x_interp_pool_param_names}
                     XInterpPoolCohortParams()._insert_from_upstream_param_names(
                         secondary_key_subset_map, key, use_full_param_name=True)
+                else:
+                    print(f"XInterpPool not fully populated for key: {key} and each of "
+                          f"params.x_interp_pool_param_names: {params.x_interp_pool_param_names}")
 
     def insert_defaults(self, **kwargs):
-        self.insert_glm_defaults()
+        self.insert_glm_defaults(**kwargs)
 
     def lookup_param_name_from_shorthand(self, shorthand_param_name):
         return self.get_shorthand_params_map()[shorthand_param_name].x_interp_pool_cohort_param_name

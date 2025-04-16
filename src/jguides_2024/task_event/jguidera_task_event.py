@@ -67,6 +67,12 @@ class PumpTimes(ComputedBase):
             pump_times = pump_times[pump_values == 1]
             # Convert pump names to well names
             environment = (TaskIdentification & key).fetch1("task_environment")  # get environment for this epoch
+
+            # Only include pumps in the environment
+            is_pump_env = np.asarray([f"{environment}" in pump_name for pump_name in pump_names])
+            pump_names = pump_names[is_pump_env]
+            pump_times = pump_times[is_pump_env]
+
             pump_names = np.asarray([pump_name.split(f"{environment}_pump_")[1].split("_")[0] + "_well" for
                                      pump_name in pump_names])  # get names of wells at which dio pump up event detected
         else:  # use statescript pump events
@@ -114,7 +120,7 @@ def get_contingency_task_environment_colors(nwb_file_name, epoch_list):
 
 def populate_jguidera_task_event(key=None, tolerate_error=False, populate_upstream_limit=None, populate_upstream_num=None):
     schema_name = "jguidera_task_event"
-    upstream_schema_populate_fn_list = [populate_jguidera_task_event, populate_jguidera_dio_event]
+    upstream_schema_populate_fn_list = [populate_jguidera_dio_event]
     populate_schema(schema_name, key, tolerate_error, upstream_schema_populate_fn_list,
                     populate_upstream_limit, populate_upstream_num)
 

@@ -11,7 +11,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import make_pa
     get_table_column_names, get_key_filter, \
     table_name_from_table_type, check_single_table_entry, \
     get_table_secondary_key_names, get_param_name_separating_character, get_num_param_name, fetch_entries_as_dict, \
-    check_epochs_id, get_cohort_test_entry, replace_param_name_chars
+    check_epochs_id, get_cohort_test_entry, replace_param_name_chars, get_epochs_id
 from src.jguides_2024.datajoint_nwb_utils.get_datajoint_table import get_table
 from src.jguides_2024.utils.dict_helpers import add_defaults
 from src.jguides_2024.utils.set_helpers import check_membership, check_set_equality
@@ -451,23 +451,29 @@ class PoolCohortParamsBase(SecKeyParamsBase):
             return [strip_trailing_s(x) for x in param_name_iterables]
         return param_name_iterables
 
-    def insert_single_member_cohort(self, param_name_dict):
+    def insert_single_member_cohort(self, param_name_dict, **kwargs):
         """
         Insert cohorts with single member
         :param param_name_dict: dictionary, matching secondary key in pool table. Find all entries in pool table that
                have param_name_dict matching this
         """
 
+        key_filter = dict()
+        if "key_filter" in kwargs:
+            key_filter = kwargs["key_filter"]
+
         # Find entries in pool selection table with param_dict matching the one passed by user
-        pool_table_entries = self._get_pool_selection_table()().get_entries_with_param_name_dict(param_name_dict)
+        pool_table_entries = (self._get_pool_selection_table() & key_filter).get_entries_with_param_name_dict(param_name_dict)
 
         # Insert each entry as its own cohort
-        for entry in pool_table_entries:
+        non_param_name_primary_key_names = get_non_param_name_primary_key_names(self)
+        param_name_iterables_singular = self._get_param_name_iterables(singular=True)
+        param_name_iterables_plural = self._get_param_name_iterables()
+        print(f"Looping through {len(pool_table_entries)} pool_table_entries...")
+        for idx, entry in enumerate(pool_table_entries):
             # Add primary keys that are not cohort param name
-            key = {k: entry[k] for k in get_non_param_name_primary_key_names(self)}
+            key = {k: entry[k] for k in non_param_name_primary_key_names}
             # Make map from secondary keys used to generate cohort param name to single value for each
-            param_name_iterables_singular = self._get_param_name_iterables(singular=True)
-            param_name_iterables_plural = self._get_param_name_iterables()
             secondary_key_subset_map = {
                 k1: [entry[k2]] for k1, k2 in zip(param_name_iterables_plural, param_name_iterables_singular)}
             # For interpretability and since should respect character limit, use full param name for single
@@ -570,14 +576,16 @@ class EpsCohortParamsBase(SecKeyParamsBase):
         # ...Ensure upstream table populated
         from src.jguides_2024.metadata.jguidera_epoch import EpochCohortParams
         EpochCohortParams().insert_from_epochs(key["nwb_file_name"], key["epochs"])
-        key.update({"epochs_id": EpochCohortParams().lookup_epochs_id(key["nwb_file_name"], key["epochs"])})
+        key.update({"epochs_id":  get_epochs_id(key["epochs"])})
 
         # Return key
         return key
 
     def insert_single_member_cohort_defaults(self):
         # Populate cohort table with single epoch entries
-        candidate_keys = [self._update_key(key) for key in self._upstream_table().fetch("KEY")]
+        upstream_keys = self._upstream_table().fetch("KEY")
+        print(f"Found {len(upstream_keys)} upstream_keys...")
+        candidate_keys = [self._update_key(key) for key in upstream_keys]
         for key in candidate_keys:
             self.insert1(key, skip_duplicates=True)
 

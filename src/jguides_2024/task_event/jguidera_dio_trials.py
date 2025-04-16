@@ -19,7 +19,9 @@ from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_delay_inte
 from src.jguides_2024.datajoint_nwb_utils.nwbf_helpers import get_epoch_time_interval
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.metadata.jguidera_epoch import RunEpoch
+from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.position_and_maze.jguidera_maze import RewardWellPath, MazePathWell, RewardWellPathColor
+from src.jguides_2024.position_and_maze.jguidera_position import IntervalPositionInfoRelabel
 from src.jguides_2024.task_event.jguidera_dio_event import ProcessedDioEvents, populate_jguidera_dio_event
 from src.jguides_2024.task_event.jguidera_task_event import PumpTimes, populate_jguidera_task_event
 from src.jguides_2024.task_event.jguidera_task_performance import AlternationTaskPerformance, \
@@ -817,6 +819,83 @@ class DioWellDATrials(WellEventTrialsBaseExt):
         # inputs (e.g. to fetch dataframe from nwb file)
         return super().fetch1_dataframe(strip_s, "trial_start_epoch_trial_numbers")
 
+    def get_low_speed_epoch_trial_numbers(self, std_thresh=2):
+        # Find trial numbers (corresponding to start of trial, i.e. trial_start_epoch_trial_numbers)
+        # with at least one sample where speed dips below a set amount for a given spatial bin (a number of
+        # standard deviations below the mean speed in that bin (computed using all time points in that bin))
+
+        ppt_dig_param_name = "0.0625"
+        res_time_bins_pool_param_name = "ResEpochTimeBins#0.1#EpochInterval_no_comb"
+        position_info_param_name = "default_decoding"
+
+        key = {"position_info_param_name": position_info_param_name,
+               "ppt_dig_param_name": ppt_dig_param_name,
+               "res_time_bins_pool_param_name": res_time_bins_pool_param_name}
+
+        da_trials_entry = (self & key).fetch1()
+
+        key.update({k: da_trials_entry[k] for k in ["nwb_file_name", "epoch"]})
+
+        # Get head speed
+        pos_df = (IntervalPositionInfoRelabel.RelabelEntries & key).fetch1_dataframe()
+
+        # Get binned fraction path traversed
+        # local import to avoid circular import error
+        from src.jguides_2024.position_and_maze.jguidera_ppt_interp import PptDig
+        ppt_df = (PptDig & key).fetch1_dataframe()
+
+        # Get head speed at times of binned fraction path traversed
+        head_speed_ppt_interp = np.interp(ppt_df.index, pos_df.index, pos_df.head_speed)
+
+        # Check that no nans in interpolated head speed
+        if any(np.isnan(head_speed_ppt_interp)):
+            raise Exception(f"nan in interpolated head speed")
+
+        # Get df with interpolated head speed and binned fraction path traversed
+        speed_ppt_bin_df = pd.DataFrame({"head_speed": head_speed_ppt_interp, "ppt_bin": ppt_df.digitized_ppt})
+
+        # Get mean and standard deviation of all samples in each ppt bin
+        grouped_df = speed_ppt_bin_df.groupby("ppt_bin")
+        speed_mean = grouped_df.mean()
+        speed_std = grouped_df.std()
+
+        # Define speed threshold
+        # ...initialize vector for speed threshold at each time point (will be based on the ppt bin the rat is
+        # in at that time point)
+        speed_thresh_list = np.asarray([np.nan] * len(speed_ppt_bin_df))
+        # ...loop through ppt bins and enter in the threshold for that ppt bin at all the times when rat in that bin
+        for ppt_bin in np.unique(speed_ppt_bin_df.ppt_bin):
+            # Get speed threshold for this ppt bin (a number of standard deviations below mean speed in this bin)
+            speed_thresh = unpack_single_element(speed_mean.loc[ppt_bin].values) - unpack_single_element(
+                speed_std.loc[ppt_bin].values) * std_thresh
+            # Set minimum threshold of zero, since speed cant be negative
+            speed_thresh = np.max([speed_thresh, 0])
+            # Get boolean indicating samples in this ppt bin
+            valid_bool = speed_ppt_bin_df.ppt_bin == ppt_bin
+            # Enter in the speed threshold for this ppt bin at the relevant samples
+            speed_thresh_list[valid_bool] = speed_thresh
+
+        # Check that a speed threshold was defined for each time
+        if any(np.isnan(speed_thresh_list)):
+            raise Exception(f"nan in speed thresh list")
+
+        # Find samples where speed below threshold
+        speed_below_thresh = speed_ppt_bin_df.head_speed - speed_thresh_list < 0
+
+        # Define trial intervals
+        trial_intervals = list(zip(da_trials_entry["trial_start_times"], da_trials_entry["trial_end_times"]))
+
+        # Find epoch trial numbers (corresponding to trial start) where speed below threshold on at least one time
+        low_speed_epoch_trial_nums = []
+        for epoch_trial_num, (x1, x2) in zip(da_trials_entry["trial_start_epoch_trial_numbers"], trial_intervals):
+            trial_bool = np.logical_and(speed_below_thresh.index <= x2, speed_below_thresh.index > x1)
+
+            if any(speed_below_thresh[trial_bool]):
+                low_speed_epoch_trial_nums.append(epoch_trial_num)
+
+        # Return
+        return low_speed_epoch_trial_nums
+
 
 @schema
 class DioWellADTrialsParams(EventTrialsParamsBase):
@@ -869,7 +948,7 @@ class DioWellArrivalTrialsParams(EventTrialsParamsBase):
     """
 
     def _default_params(self):
-        return [get_delay_interval(), [-1, 3]]  # start time shift, end time shift
+        return [get_delay_interval(), [-1, 3], [-1, 1]]  # start time shift, end time shift
 
     def lookup_delay_param_name(self):
         return self.lookup_param_name(get_delay_interval())
@@ -940,7 +1019,7 @@ class DioWellArrivalTrialsSubSel(SelBase):
         dio_well_ad_trials_param_name = DioWellADTrialsParams().lookup_param_name([0, 0])
 
         keys = []
-        for nwb_file_name in get_reliability_paper_nwb_file_names():
+        for nwb_file_name in TaskIdentification().fetch("nwb_file_name"):
             for epoch in (RunEpoch & {"nwb_file_name": nwb_file_name}).fetch("epoch"):
 
                 key = {
@@ -1081,7 +1160,8 @@ class DioWellDepartureTrials(WellEventTrialsBaseExt):
 
 def populate_jguidera_dio_trials(key=None, tolerate_error=False, populate_upstream_limit=None, populate_upstream_num=None):
     schema_name = "jguidera_dio_trials"
-    upstream_schema_populate_fn_list = [populate_jguidera_dio_event, populate_jguidera_task_event, populate_jguidera_task_performance]
+    upstream_schema_populate_fn_list = [
+        populate_jguidera_dio_event, populate_jguidera_task_event, populate_jguidera_task_performance]
     populate_schema(schema_name, key, tolerate_error, upstream_schema_populate_fn_list,
                     populate_upstream_limit, populate_upstream_num)
 

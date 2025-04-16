@@ -117,6 +117,8 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
 
         recording_set_names_boot_set_names = [
 
+             # LATE IN LEARNING
+
              # Rat cohort
              (RecordingSet().lookup_rat_cohort_set_name(), boot_set_name)
              for boot_set_name in self._default_cohort_boot_set_names()] + [
@@ -125,7 +127,16 @@ class DecodeCovFRVecSelBase(PopulationAnalysisSelBase):
              (recording_set_name, boot_set_name) for recording_set_name in
              RecordingSet().get_recording_set_names(
                  key_filter, ["Haight_rotation"])
-             for boot_set_name in self._default_noncohort_boot_set_names()]
+             for boot_set_name in self._default_noncohort_boot_set_names()] + [
+
+            # EARLY IN LEARNING
+
+            # Non cohort
+            (recording_set_name, boot_set_name)
+            for recording_set_name in RecordingSet().get_recording_set_names(
+                key_filter, ["first_day_learning_single_epoch"])
+            for boot_set_name in self._default_noncohort_boot_set_names()
+        ]
 
         param_name_map = dict()
         for recording_set_name, boot_set_name in recording_set_names_boot_set_names:
@@ -1191,8 +1202,16 @@ class DecodeCovFRVecSummBase(PathWellFRVecSummBase):
             # across different contexts (paths or wells)
             exclude_columns = ["original_eps_labels"]
             # ...Get df with paired metric
+            # tolerate nonoverlapping column sets if early in learning sessions
+            tolerate_nonoverlapping_column_sets = False
+            if np.logical_and(
+                    key["recording_set_name"] in RecordingSet().get_recording_set_names(
+                    dict(), ["first_day_learning_single_epoch"]),
+                    key["decode_path_fr_vec_param_name"] == "LDA_path_progression_loocv_correct_stay_trials"):
+                tolerate_nonoverlapping_column_sets = True
             metric_df = self.get_paired_metric_df(
-                metric_df, target_column_name, target_column_pairs, metric_pair_fn, exclude_columns=exclude_columns)
+                metric_df, target_column_name, target_column_pairs, metric_pair_fn, exclude_columns=exclude_columns,
+            tolerate_nonoverlapping_column_sets=tolerate_nonoverlapping_column_sets)
 
             # Define parameters for bootstrap
             # ...Define columns at which to resample during bootstrap, in order

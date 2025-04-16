@@ -180,12 +180,16 @@ class CorrFrmapPptSm(ComputedBase):
 
     def make(self, key):
         fr_df_1, fr_df_2, unit_ids = _get_fr_df_unit_ids_two_entries(key, FrmapPptSm, ["epoch"])
-        num_samples, corr_coeffs, p_vals = zip(*[_calculate_corr(fr_df_1, fr_df_2, unit_id)
-                                                 for unit_id in unit_ids])  # correlation coefficient, p value
+        if len(fr_df_1) == 0 and len(fr_df_2) == 0:
+            num_samples = [np.nan]*len(unit_ids)
+            corr_coeffs = [np.nan]*len(unit_ids)
+            p_vals = [np.nan]*len(unit_ids)
+        else:
+            num_samples, corr_coeffs, p_vals = zip(*[_calculate_corr(fr_df_1, fr_df_2, unit_id)
+                                                     for unit_id in unit_ids])  # correlation coefficient, p value
         similarity_df = _similarity_df(
             unit_ids, corr_coeffs, "correlation_coefficient", num_samples, key, "epoch", p_vals)
-        _insert_similarity_table_entry(self, key, similarity_df,
-                                       "corr_frmap_ppt_sm_object_id")
+        _insert_similarity_table_entry(self, key, similarity_df, "corr_frmap_ppt_sm_object_id")
 
 
 @schema
@@ -202,7 +206,11 @@ class OverlapFrmapPptSm(ComputedBase):
 
     def make(self, key):
         fr_df_1, fr_df_2, unit_ids = _get_fr_df_unit_ids_two_entries(key, FrmapPptSm, ["epoch"])
-        num_samples, overlaps = zip(*[_calculate_overlap(fr_df_1, fr_df_2, unit_id) for unit_id in unit_ids])
+        if len(fr_df_1) == 0 and len(fr_df_2) == 0:
+            num_samples = [np.nan]*len(unit_ids)
+            overlaps = [np.nan]*len(unit_ids)
+        else:
+            num_samples, overlaps = zip(*[_calculate_overlap(fr_df_1, fr_df_2, unit_id) for unit_id in unit_ids])
         similarity_df = _similarity_df(unit_ids, overlaps, "overlap", num_samples, key, "epoch")
         _insert_similarity_table_entry(self, key, similarity_df,
                                        "overlap_frmap_ppt_sm_object_id")
@@ -226,16 +234,21 @@ class FrmapPupt(FrmapBase):
         path_names = np.unique(ppt_df["trials_path_name"])
 
         for path_name in path_names:
-            ppt_df_subset = df_filter_columns(ppt_df, {"trials_path_name": path_name})
-            ppt_bouts = list(ppt_df_subset["trials_ppt"])
-            ppt_bouts_t = list(ppt_df_subset["trials_time"])
-            unit_ids, event_rates = unzip_as_list(
-                [(unit_id, make_1D_rate_map_measurement_bouts(event_times, ppt_bouts, ppt_bouts_t, ppt_bin_edges)[0])
-                 for unit_id, event_times in epoch_spike_times_df["epoch_spike_times"].items()])
-            frmap_pupt_df = pd.DataFrame.from_dict(
-                {"unit_id": unit_ids, "path_name": path_name, "rate_map": event_rates,
-                 "ppt_bin_centers": [vector_midpoints(ppt_bin_edges)] * len(unit_ids),
-                 "ppt_bin_edges": [ppt_bin_edges] * len(unit_ids), "num_trials": [len(ppt_bouts)] * len(unit_ids)})
+            if len(epoch_spike_times_df) == 0:
+                frmap_pupt_df = get_empty_df(
+                    ["unit_id", "path_name", "rate_map", "ppt_bin_centers", "ppt_bin_edges", "num_trials"])
+            else:
+                ppt_df_subset = df_filter_columns(ppt_df, {"trials_path_name": path_name})
+                ppt_bouts = list(ppt_df_subset["trials_ppt"])
+                ppt_bouts_t = list(ppt_df_subset["trials_time"])
+                unit_ids, event_rates = unzip_as_list(
+                    [(unit_id, make_1D_rate_map_measurement_bouts(event_times, ppt_bouts, ppt_bouts_t, ppt_bin_edges)[0])
+                     for unit_id, event_times in epoch_spike_times_df["epoch_spike_times"].items()])
+                frmap_pupt_df = pd.DataFrame.from_dict(
+                    {"unit_id": unit_ids, "path_name": path_name, "rate_map": event_rates,
+                     "ppt_bin_centers": [vector_midpoints(ppt_bin_edges)] * len(unit_ids),
+                     "ppt_bin_edges": [ppt_bin_edges] * len(unit_ids), "num_trials": [len(ppt_bouts)] * len(unit_ids)})
+
             # Insert into table
             key.update({"path_name": path_name})
             insert_analysis_table_entry(self, nwb_objects=[frmap_pupt_df], key=key,

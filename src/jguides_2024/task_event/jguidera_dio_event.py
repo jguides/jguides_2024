@@ -33,7 +33,7 @@ class DioEvents(ComputedBase):
 
     def make(self, key):
         # Get DIO events for this epoch from nwb file
-        nwbf = get_nwb_file(Nwbfile().get_abs_path(key['nwb_file_name']))
+        nwbf = get_nwb_file(key['nwb_file_name'])
         nwbf_dios = nwbf.fields["processing"]["behavior"]["behavioral_events"].fields["time_series"]
         dio_event_values_list, dio_event_times_list, dio_descriptions = return_n_empty_lists(3)
         for dio_name, dios in nwbf_dios.items():  # for each DIO type
@@ -54,7 +54,11 @@ class DioEvents(ComputedBase):
         insert_analysis_table_entry(self, [dio_event_df], key, ["dio_events_object_id"])
 
     def fetch1_dataframe(self):
-        return super().fetch1_dataframe().set_index("dio_int")
+        dio_df = super().fetch1_dataframe()
+        # Fix Haigth typo
+        dio_df["dio_name"] = dio_df["dio_name"].str.replace("Haigth", "Haight")
+        # Set index to dio_int
+        return dio_df.set_index("dio_int")
 
     def plot_dios(self, nwb_file_name, epoch):
         df = (self & {"nwb_file_name": nwb_file_name,
@@ -86,11 +90,12 @@ class DioEvents(ComputedBase):
             df_subset = dio_df.loc[dio_int]
             valid_bool = not_small_diff_bool(df_subset.dio_event_times, diff_threshold=diff_threshold)
             new_dio_event_times, new_dio_event_values = return_n_empty_lists(2)  # initialize
-            if len(df_subset.dio_event_times) > 0:  # if dio events
-                new_dio_event_times = df_subset.dio_event_times[valid_bool]
-                new_dio_event_values = df_subset.dio_event_values[valid_bool]
-                check_alternating_elements(new_dio_event_values, 0, 1)
-                num_excluded_dio_events_dict[df_subset["dio_name"]] += np.sum(np.invert(valid_bool))
+            if len(df_subset.dio_event_times) > 0:  # if any dio events
+                if len(df_subset.dio_event_times[valid_bool]) > 0:  # if any valid dio events
+                    new_dio_event_times = df_subset.dio_event_times[valid_bool]
+                    new_dio_event_values = df_subset.dio_event_values[valid_bool]
+                    check_alternating_elements(new_dio_event_values, 0, 1)
+                    num_excluded_dio_events_dict[df_subset["dio_name"]] += np.sum(np.invert(valid_bool))
             # Replace event times and values
             df_subset["dio_event_times"] = np.asarray(new_dio_event_times)
             df_subset["dio_event_values"] = np.asarray(new_dio_event_values)
@@ -104,12 +109,23 @@ class DioEvents(ComputedBase):
         # Traverse df in reverse order (from "dio N" to "dio 1"), and on the iteration for "dio x"
         # exclude ticks from "dio x - 1" (this is why we dont include "dio 0" in our loop)
         for dio_int in df_pokes.index[1::][::-1]:
+
             # Continue if no "dio x - 1"
             if dio_int - 1 not in df_pokes.index:
                 continue
+
             # Continue if "dio x - 1" has no events
-            if len(df_pokes.loc[dio_int - 1].dio_event_times) == 0:
+
+            # ...for some reason, if only one event, array is zero dimensional which leads to error when getting length
+            # account for this case
+            dio_event_times = df_pokes.loc[dio_int - 1].dio_event_times
+            if dio_event_times.ndim == 0:
+                dio_event_times = np.atleast_1d(dio_event_times)
+
+            # ...continue if no events
+            if len(dio_event_times) == 0:
                 continue
+
             df_row = df_pokes.loc[dio_int]  # df row for current dio
             dio_event_values = df_row.dio_event_values  # event values for current dio
             dio_event_times = df_row.dio_event_times  # event times for current dio
@@ -213,6 +229,11 @@ class ProcessedDioEvents(ComputedBase):
         """
 
     def make(self, key):
+
+        if len(RunEpoch & key) == 0:
+            print(f"Not populating ProcessedDioEvents for key {key} because no corresponding entry in RunEpoch")
+            return
+
         # Hard code diff_threshold
         diff_threshold = .001
 
@@ -226,12 +247,22 @@ class ProcessedDioEvents(ComputedBase):
         dict_temp = {"dio_event_names": [],
                      "dio_event_times": [],
                      "dio_event_values": []}  # initialize dictionary to store all dio events across epochs
+
         for dio_name in dio_names:  # for each dio poke event
+
             dio_event_times = df_pop(dio_df, {"dio_name": dio_name}, "dio_event_times")
             dio_event_values = df_pop(dio_df, {"dio_name": dio_name}, "dio_event_values")
+
+            # If array zero dimensional, convert to 1D array
+            if dio_event_times.ndim == 0:
+                dio_event_times = np.atleast_1d(dio_event_times)
+            if dio_event_values.ndim == 0:
+                dio_event_values = np.atleast_1d(dio_event_values)
+
             dict_temp["dio_event_names"] += [dio_name] * len(dio_event_times)
             dict_temp["dio_event_times"] += list(dio_event_times)
             dict_temp["dio_event_values"] += list(dio_event_values)
+
         all_dio_df = pd.DataFrame.from_dict(dict_temp)
         all_dio_df.set_index("dio_event_times", inplace=True)
         all_dio_df.sort_index(inplace=True)
@@ -325,7 +356,7 @@ class ProcessedDioEvents(ComputedBase):
             key = kwargs["key"]
             if key is not None:
                 if "nwb_file_name" in key:
-                    if key["nwb_file_name"] not in RunEpoch.fetch("nwb_file_name"):
+                    if len(RunEpoch & key) == 0:
                         print(f"Only populating ProcessedDioEvents for run epochs. Continuing...")
                         return
         super().populate_(**kwargs)

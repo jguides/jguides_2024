@@ -24,7 +24,7 @@ from src.jguides_2024.task_event.jguidera_dio_trials import (DioWellDATrials, po
 from src.jguides_2024.task_event.jguidera_dio_trials import DioWellDATrialsParams
 from src.jguides_2024.utils.check_well_defined import check_one_none
 from src.jguides_2024.utils.df_helpers import df_filter_index, zip_df_columns, df_filter_columns, \
-    df_filter1_columns
+    df_filter1_columns, df_from_data_list, df_filter_columns_isin
 from src.jguides_2024.utils.digitize_helpers import digitize_indexed_variable
 from src.jguides_2024.utils.make_bins import make_bin_edges
 from src.jguides_2024.utils.point_process_helpers import event_times_in_intervals
@@ -381,6 +381,49 @@ class Ppt(ComputedBase):
         if ppt_bin_width < 0 or ppt_bin_width > 1:
             raise Exception(f"ppt_bin_width must be on [0, 1] but is {ppt_bin_width}")
         return linspace(*cls.get_range(), ppt_bin_width)
+
+    def get_first_crossed_junction_df(self, verbose=False):
+
+        # Get when rat first crossed maze junctions on each trial
+        ppt_df = self.fetch1_dataframe()
+
+        from src.jguides_2024.position_and_maze.jguidera_maze import get_n_junction_path_junction_fractions, return_n_junction_path_names
+        junction_fractions = get_n_junction_path_junction_fractions(2)
+
+        # Restrict to valid paths (two maze junctions)
+        valid_path_names = return_n_junction_path_names(2)
+        ppt_df = df_filter_columns_isin(ppt_df, {"trials_path_name": valid_path_names})
+
+        # Estimate when rat first crossed each track junction, for paths with two maze junctions
+        data_list = []
+        for epoch_trial_number, trials_ppt, trials_time in zip(
+                ppt_df.trial_start_epoch_trial_numbers, ppt_df.trials_ppt, ppt_df.trials_time):
+            for junction_num, junction_fraction in enumerate(junction_fractions):
+                crossed_idx = np.where(trials_ppt >= junction_fraction)[0][0]
+
+                if crossed_idx == 0:
+                    raise Exception(f"Expecting idx for when rat first crossed junction to be greater than zero")
+
+                time_estimate = np.interp(
+                    junction_fraction, trials_ppt[crossed_idx - 1:crossed_idx],
+                    trials_time[crossed_idx - 1:crossed_idx])
+
+                data_list.append((epoch_trial_number, junction_num, time_estimate, junction_fraction))
+
+        first_crossed_junction_df = df_from_data_list(
+            data_list, ["epoch_trial_number", "junction_number", "time_estimate", "ppt"]).set_index(
+            "epoch_trial_number")
+
+        # Plot estimates along with ppt for sanity check if indicated
+        if verbose:
+            ppt_df = self.fetch1_dataframe()
+            fig, ax = plt.subplots(figsize=(20, 5))
+            for _, df_row in ppt_df.iterrows():
+                ax.plot(df_row.trials_time, df_row.trials_ppt, ".")
+            for _, df_row in first_crossed_junction_df.iterrows():
+                ax.plot(df_row.time_estimate, df_row.ppt, "x")
+
+        return first_crossed_junction_df
 
 
 @schema

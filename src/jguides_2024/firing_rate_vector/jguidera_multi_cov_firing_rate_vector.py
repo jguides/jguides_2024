@@ -614,25 +614,37 @@ class MultiCovFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
     -> MultiCovFRVecSTAveSummParams
     ---
     upstream_keys : mediumblob
+    -> nd.common.AnalysisNwbfile
+    df_concat_object_id : varchar(40)
     """
+
+    class Upstream(dj.Part):
+        definition = """
+        # Achieves upstream dependence on upstream tables
+        -> MultiCovFRVecSTAveSummSel
+        -> BrainRegionCohort
+        -> CurationSet
+        -> MultiCovFRVecSTAve
+        """
+
+    def _default_recording_set_names_boot_set_names_cov_fr_vec_param_names(self, **key_filter):
+        x = [
+
+            # Rat cohort
+            (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort", "path_delay_postdelay^correct_incorrect_stay_trials"),
+            ]
+
+        # Non cohort
+        for recording_set_name in RecordingSet().get_recording_set_names(
+                key_filter, ["single_epoch_testing"]):  # Haight rotation TODO: change once done testing
+            x.append((recording_set_name, "default", "path_delay_postdelay^correct_incorrect_stay_trials"))
+
+        return x
 
     # TODO: remove this once done with testing. This is just to pass fewer recording set names for testing.
     def get_recording_set_names(self, key_filter):
         # Return list of recording set names for a given key_filter, for use in populating tables
         return RecordingSet().get_recording_set_names(key_filter, ["single_epoch_testing"])
-
-    def _default_cov_fr_vec_param_names(self):
-        return [
-            "path_delay^correct_incorrect_stay_trials",
-            "path_delay_postdelay^correct_incorrect_stay_trials"]
-
-    def _default_noncohort_boot_set_names(self):
-        return super()._default_noncohort_boot_set_names() + [
-            "brain_region_diff"]
-
-    def _default_cohort_boot_set_names(self):
-        return super()._default_cohort_boot_set_names() + [
-            "brain_region_diff_rat_cohort"]
 
     def delete_(self, key, safemode=True):
         # If recording set name not in key but components that determine it are, then
@@ -656,15 +668,6 @@ class MultiCovFRVecSTAveSumm(CovariateFRVecSTAveSummBase, MultiCovFRVecSummBase)
     ave_conf_df_object_id : varchar(40)
     boot_ave_df_object_id : varchar(40)
     """
-
-    class Upstream(dj.Part):
-        definition = """
-        # Achieves upstream dependence on upstream tables
-        -> MultiCovFRVecSTAveSumm
-        -> BrainRegionCohort
-        -> CurationSet
-        -> MultiCovFRVecSTAve
-        """
 
     @staticmethod
     def _upstream_table():
@@ -722,7 +725,18 @@ class MultiCovAveFRVecSummSel(CovariateFRVecAveSummSelBase):
     -> MultiCovAveFRVecSummParams
     ---
     upstream_keys : mediumblob
+    -> nd.common.AnalysisNwbfile
+    df_concat_object_id : varchar(40)
     """
+
+    class Upstream(dj.Part):
+        definition = """
+        # Achieves upstream dependence on upstream tables
+        -> MultiCovAveFRVecSummSel
+        -> BrainRegionCohort
+        -> CurationSet
+        -> MultiCovAveFRVec
+        """
 
     # Override parent class method so can include across rat cohort
     def _recording_set_name_types(self):
@@ -749,15 +763,6 @@ class MultiCovAveFRVecSumm(CovariateAveFRVecSummBase, MultiCovFRVecSummBase):
     ave_conf_df_object_id : varchar(40)
     boot_ave_df_object_id : varchar(40)
     """
-
-    class Upstream(dj.Part):
-        definition = """
-        # Achieves upstream dependence on upstream tables
-        -> MultiCovAveFRVecSumm
-        -> BrainRegionCohort
-        -> CurationSet
-        -> MultiCovAveFRVec
-        """
 
     @staticmethod
     def _upstream_table():

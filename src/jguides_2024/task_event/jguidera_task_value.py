@@ -267,15 +267,15 @@ class TimeExpecVal(CovDigmethBase):
             exclusion_params = copy.deepcopy(exclusion_params)
 
             # Check exclusion type passed if want to exclude
-            if "exclusion_type" not in exclusion_params:
-                raise Exception(f"exclusion_type must be in exclusion_params")
+            if "exclusion_types" not in exclusion_params:
+                raise Exception(f"exclusion_types must be in exclusion_params")
 
-            # Check exclusion type valid
-            exclusion_type = exclusion_params["exclusion_type"]
-            check_membership([exclusion_type], ["paths", None])
+            # Check exclusion types valid
+            exclusion_types = exclusion_params["exclusion_types"]
+            check_membership(exclusion_types, ["paths", None, "epoch_trial_numbers"])
 
             # Restrict to trials on particular paths
-            if exclusion_type == "paths":
+            if "paths" in exclusion_types:
 
                 task_period = exclusion_params.pop("task_period", None)
 
@@ -290,6 +290,11 @@ class TimeExpecVal(CovDigmethBase):
 
                 # Restrict to times on paths
                 df = df.loc[path_times]
+
+            # Exclude particular epoch trial numbers if indicated
+            if "epoch_trial_numbers" in exclusion_types:
+                valid_bool = ~df["epoch_trial_nums"].isin(exclusion_params["epoch_trial_numbers"])
+                df = df[valid_bool]
 
         return df
 

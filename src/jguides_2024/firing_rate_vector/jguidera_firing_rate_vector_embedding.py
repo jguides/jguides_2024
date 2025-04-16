@@ -41,7 +41,7 @@ from src.jguides_2024.utils.dict_helpers import add_defaults
 from src.jguides_2024.utils.plot_helpers import return_n_cmap_colors
 from src.jguides_2024.utils.point_process_helpers import event_times_in_intervals_bool
 from src.jguides_2024.utils.set_helpers import check_membership
-from src.jguides_2024.utils.vector_helpers import unpack_single_element
+from src.jguides_2024.utils.vector_helpers import unpack_single_element, find_spans_increasing_list
 
 # Needed for table definitions:
 ResTimeBinsPoolCohortParams
@@ -100,7 +100,7 @@ class FRVecEmbSel(AcrossFRVecTypeTableSelBase):
     def insert_epochs(self, nwb_file_name, epochs, res_time_bins_pool_param_names=None,
                       brain_region_units_param_name=None, res_epoch_spikes_sm_param_name=None, zscore_fr=False,
                       fr_vec_emb_param_name=None, curation_set_name=None, brain_region_cohort_name=None,
-                      verbose=True):
+                      verbose=True, debug_mode=False):
 
         # Get inputs if not passed
         if res_time_bins_pool_param_names is None:
@@ -116,7 +116,7 @@ class FRVecEmbSel(AcrossFRVecTypeTableSelBase):
                 brain_region_units_param_name = BrainRegionUnitsParams().lookup_runs_param_name(
                     nwb_file_name, min_epoch_mean_firing_rate=min_epoch_mean_firing_rate)
         if fr_vec_emb_param_name is None:
-            fr_vec_emb_param_name = FRVecEmbParams().lookup_param_name([15, 2])
+            fr_vec_emb_param_name = FRVecEmbParams().lookup_param_name([15, 3])
         if res_epoch_spikes_sm_param_name is None:
             res_epoch_spikes_sm_param_name = ResEpochSpikesSmParams().lookup_param_name([.1])
         if curation_set_name is None:
@@ -191,6 +191,8 @@ class FRVecEmbSel(AcrossFRVecTypeTableSelBase):
             # ...print out if fewer entries than needed to insert into FRVecEmbSel
             if not all(num_entries_fr_vec == 1):
                 print(f"not all entries available in FRVec to insert epochs into FRVecEmbSel. key: {key}")
+                if debug_mode:
+                    raise Exception
                 continue
 
             # Insert into FRVecEmbSel
@@ -287,13 +289,21 @@ class FRVecEmb(ComputedBase):
         cval_invalid = plot_params.pop("cval_invalid", .9)
         alpha_invalid = plot_params.pop("alpha_invalid", .01)
         plot_params_copy.update({"alpha": alpha_invalid})
+        plot_params_copy.update({"s": 1})
         cls._plot_single_color(embedding, invalid_bool, ax, plot_components, [cval_invalid]*3, **plot_params_copy)
 
     @staticmethod
     def _plot_single_color(embedding, bool_, ax, plot_components, cval, **plot_params):
         plot_params_copy = copy.deepcopy(plot_params)
         plot_params_copy.update({"color": cval})
+        plot_line = plot_params_copy.pop("plot_line", False)
+
         plot_embedding_scatter(embedding.loc[bool_], ax, plot_components, **plot_params_copy)
+
+        if plot_line:
+            spans, _ = find_spans_increasing_list(np.where(bool_)[0])
+            for x1, x2 in spans:
+                plot_embedding_line(embedding.iloc[x1:x2], ax, plot_components, **plot_params_copy)
 
     def _get_target_epoch(self, target_epoch):
         # Allow target_epoch to be None if single epoch. In this case, use single epoch as target
@@ -358,7 +368,10 @@ class FRVecEmb(ComputedBase):
     def _plot_by_covariate(
             self, covariate_table, digitized_fn_name, digitized_col_name, cmap_name="jet", bin_width=.01,
             target_epoch=None, plot_components=("0", "1"), ax=None, exclusion_params=None, **plot_params):
-        # Color dots in scatter by covariate
+        # Color dots in scatter by covariate, optionally plotting line as well
+
+        plot_params_copy = copy.deepcopy(plot_params)
+        plot_line = plot_params_copy.pop("plot_line", False)
 
         # Get inputs if not passed
         target_epoch = self._get_target_epoch(target_epoch)
@@ -388,23 +401,28 @@ class FRVecEmb(ComputedBase):
         invalid_bool = np.invert(valid_bool)
 
         # Plot invalid points for context
-        self._plot_invalid(embedding, invalid_bool, ax, plot_components, **plot_params)
+        self._plot_invalid(embedding, invalid_bool, ax, plot_components, **plot_params_copy)
 
         # Plot valid points: covariate in epoch
         color_list = return_n_cmap_colors(cmap=plt.cm.get_cmap(cmap_name), num_colors=num_covariate_bins + 1)[
             np.asarray(cov_dig - 1, dtype=int)]  # note that this computation is fairly fast
-        plot_params.update({"color": color_list[valid_bool]})
-        plot_embedding_scatter(embedding.loc[valid_bool], ax, plot_components, **plot_params)
+        plot_params_copy.update({"color": color_list[valid_bool]})
+        plot_embedding_scatter(embedding.loc[valid_bool], ax, plot_components, **plot_params_copy)
+
+        if plot_line:
+            spans, _ = find_spans_increasing_list(np.where(valid_bool)[0])
+            for x1, x2 in spans:
+                plot_embedding_line(embedding.iloc[x1:x2], ax, plot_components, **plot_params_copy)
 
         # Plot large dots for samples in a trial, if indicated
         if exclusion_params is not None:
             if "highlight_trial_num" in exclusion_params:
                 valid_bool = self._get_trial_bool(exclusion_params, valid_bool, embedding.index)
                 # Update dot size to large and get list of colors corresponding to trial
-                plot_params.update(
+                plot_params_copy.update(
                     {"s": self._highlight_trial_dot_size(), "edgecolors": "black", "color": color_list[valid_bool]})
-                plot_embedding_scatter(embedding.loc[valid_bool], ax, plot_components, **plot_params)
-                plot_embedding_line(embedding.loc[valid_bool], ax, plot_components, **plot_params)
+                plot_embedding_scatter(embedding.loc[valid_bool], ax, plot_components, **plot_params_copy)
+                plot_embedding_line(embedding.loc[valid_bool], ax, plot_components, **plot_params_copy)
 
     @staticmethod
     def _highlight_trial_dot_size():
@@ -465,7 +483,8 @@ class FRVecEmb(ComputedBase):
         # ...check that exclusion type within those that is currently accounted for
         if exclusion_params is not None:
             check_membership(
-                [exclusion_params["exclusion_type"]], ["stay_trial", "leave_trial", "paths"], "exclusion type",
+                exclusion_params["exclusion_types"], [
+                    "stay_trial", "leave_trial", "paths", "epoch_trial_numbers"], "exclusion type",
                 "valid exclusion types")
 
         # Get map from path name to color
@@ -480,8 +499,8 @@ class FRVecEmb(ComputedBase):
         # Define path names to include if indicated
         path_names = MazePathWell().get_rewarded_path_names(key["nwb_file_name"], target_epoch)  # default
         if exclusion_params is not None:
-            if "paths" in exclusion_params["exclusion_type"]:
-                path_names = exclusion_params["exclusion_type"]["path_names"]
+            if "paths" in exclusion_params["exclusion_types"]:
+                path_names = exclusion_params["path_names"]
 
         # Loop through potentially rewarded paths and color embedding for each
         valid_bool_list = []  # keep track of valid across paths so can define invalid as everything else
@@ -490,12 +509,13 @@ class FRVecEmb(ComputedBase):
 
             # Define trial intervals on current path
             if task_period == "path":
-                trial_intervals = (DioWellDATrials & key).trial_intervals(trial_feature_map)
+                trial_intervals = (DioWellDATrials & key).trial_intervals(trial_feature_map, as_dict=True)
 
             elif task_period in ["delay", "well_post_delay"]:
                 key.update(DioWellDDTrialsParams().lookup_no_shift_param_name(as_dict=True))
                 dd_trials_df = (DioWellDDTrials & key).fetch1_dataframe()[
-                    ["path_names", "trial_end_well_arrival_times", "trial_end_times"]]
+                    ["path_names", "trial_end_well_arrival_times", "trial_end_times",
+                     "trial_start_epoch_trial_numbers"]]
                 df_subset = df_filter_columns(dd_trials_df, {"path_names": path_name})
                 well_arrival_times = df_subset.trial_end_well_arrival_times
 
@@ -506,27 +526,50 @@ class FRVecEmb(ComputedBase):
                     start_times = well_arrival_times + get_delay_duration()
                     trial_intervals = list(zip(start_times, df_subset.trial_end_times))
 
-                # Exclude as indicated
+                trial_intervals = {k: v for k, v in zip(
+                    df_subset["trial_start_epoch_trial_numbers"], trial_intervals)}
+
+                # Exclude stay and leave trials as indicated
                 if exclusion_params is not None:
 
                     stay_trials_bool = (df_subset.trial_end_times - df_subset.trial_end_well_arrival_times).values >= \
                                        get_delay_duration()
 
-                    if exclusion_params["exclusion_type"] == "stay_trial":
+                    if "stay_trial" in exclusion_params["exclusion_types"]:
                         valid_bool = np.invert(stay_trials_bool)
 
-                    elif exclusion_params["exclusion_type"] == "leave_trial":
+                    elif "leave_trial" in exclusion_params["exclusion_types"]:
                         valid_bool = stay_trials_bool
 
                     trial_intervals = np.asarray(trial_intervals)[valid_bool]
 
+            # Exclude epoch trial numbers if indicated
+            if "epoch_trial_numbers" in exclusion_params["exclusion_types"]:
+                trial_intervals = {
+                    k: v for k, v in trial_intervals.items() if k not in exclusion_params["epoch_trial_numbers"]}
+
+            # Get just trial intervals (leave out epoch trial numbers)
+            trial_intervals_ = list(trial_intervals.values())
+
             # Define idxs inside epoch and trial intervals defined above as valid (we will color these)
             valid_bool = np.logical_and(np.ndarray.flatten(dfs.epoch_vector.values) == target_epoch,
-                                        event_times_in_intervals_bool(dfs.embedding.index.values, trial_intervals))
+                                        event_times_in_intervals_bool(dfs.embedding.index.values, trial_intervals_))
             valid_bool_list.append(valid_bool)
 
             # Plot path samples
             self._plot_single_color(dfs.embedding, valid_bool, ax, plot_components, color_map[path_name], **plot_params)
+
+            # Plot markers for estimate of when rat first crossed each maze junction
+            first_crossed_junction_df = (Ppt & key).get_first_crossed_junction_df()
+            for junction_num, marker in zip([0, 1], ["x", "o"]):
+                df_subset = df_filter_columns(first_crossed_junction_df, {"junction_number": junction_num})
+                # ...restrict to valid epoch trial numbers
+                df_subset = df_subset.loc[list(trial_intervals.keys())]
+                idxs = [np.argmin(abs(dfs.embedding.index - x)) for x in df_subset.time_estimate]
+                junction_params = {"marker": marker, "s": 80, "alpha": 1}
+                self._plot_single_color(
+                    dfs.embedding.iloc[idxs], valid_bool[idxs], ax, plot_components, color_map[path_name],
+                    **junction_params)
 
         # Plot points that were not in epoch, or in epoch but not along any of the potentially rewarded paths,
         # for context
@@ -716,6 +759,11 @@ def _plot_embedding(embedding, ax, plot_components=("0", "1"), plot_type="scatte
     # Get subset of plot params that are allowed by scatter plot function
     invalid_params = ["alpha_invalid"]
     plot_params_ = {k: v for k, v in plot_params.items() if k not in invalid_params}
+
+    # If three points being plotted, "c" gets interpreted as each sample corresponding to point, rather than the single
+    # color to apply to all points. We address this here
+    if len(x) == 3:
+        plot_params_.update({"c": np.tile(plot_params_["c"], (len(x), 1))})
 
     # 2d plot
     if len(plot_components) == 2:

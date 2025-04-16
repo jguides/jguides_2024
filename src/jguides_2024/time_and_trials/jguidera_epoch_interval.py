@@ -8,6 +8,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import insert1
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.time_and_trials.define_interval_list import NewIntervalList
+from src.jguides_2024.time_and_trials.jguidera_interval import EpochIntervalListName
 from src.jguides_2024.utils.vector_helpers import unpack_single_element
 
 # Needed for table definitions:
@@ -30,7 +31,7 @@ class EpochInterval(ComputedBase):
     """
 
     def make(self, key):
-        interval_list_name = (TaskEpoch & key).fetch1("interval_list_name")  # get interval list name for epoch
+        interval_list_name = (EpochIntervalListName & key).fetch1("interval_list_name")  # interval list name for epoch
         interval_list = NewIntervalList(
             [interval_list_name], key["nwb_file_name"], NO_PREMAZE=True).new_interval_list
         epoch_start = interval_list[0][0]

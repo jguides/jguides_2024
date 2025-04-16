@@ -19,7 +19,6 @@ from src.jguides_2024.time_and_trials.jguidera_epoch_interval import EpochInterv
 from src.jguides_2024.utils.dict_helpers import add_defaults
 from src.jguides_2024.utils.list_helpers import check_return_single_element
 from src.jguides_2024.utils.set_helpers import check_membership
-from src.jguides_2024.utils.string_helpers import format_bool
 from src.jguides_2024.utils.vector_helpers import check_all_unique, unpack_single_element
 
 schema_name = "jguidera_epoch"
@@ -38,6 +37,25 @@ def insert_epoch_table(table, key, target_contingency_type):
     if contingency_type == target_contingency_type:
         key.update(entry)
         insert1_print(table, key)
+
+
+@schema
+class EpochFullLen(dj.Computed):
+    definition = """
+    # Indicates whether or not epoch full length
+    -> EpochInterval
+    ---
+    epoch_full_len : bool
+    """
+
+    def make(self, key):
+        key.update({"epoch_full_len": int((EpochInterval & key).get_epoch_duration() > 19 * 60)})
+        insert1_print(self, key)
+
+    def exclude_non_full_len_epochs_descriptions(self, nwb_file_name, epochs_descriptions):
+        return [x for x in epochs_descriptions if (self & {
+            "nwb_file_name": nwb_file_name, "epoch": (EpochsDescription & {
+                "nwb_file_name": nwb_file_name, "epochs_description": x}).get_epoch()}).fetch1("epoch_full_len")]
 
 
 @schema
@@ -341,25 +359,6 @@ class EpochsDescription(dj.Manual):
 
 
 @schema
-class EpochFullLen(dj.Computed):
-    definition = """
-    # Indicates whether or not epoch full length
-    -> EpochInterval
-    ---
-    epoch_full_len : bool
-    """
-
-    def make(self, key):
-        key.update({"epoch_full_len": int((EpochInterval & key).get_epoch_duration() > 19 * 60)})
-        insert1_print(self, key)
-
-    def exclude_non_full_len_epochs_descriptions(self, nwb_file_name, epochs_descriptions):
-        return [x for x in epochs_descriptions if (self & {
-            "nwb_file_name": nwb_file_name, "epoch": (EpochsDescription & {
-                "nwb_file_name": nwb_file_name, "epochs_description": x}).get_epoch()}).fetch1("epoch_full_len")]
-
-
-@schema
 class EpochArtifactFree(dj.Computed):
     definition = """
     # Indicates whether epoch free of artifacts
@@ -414,12 +413,20 @@ class EpochsDescriptions(dj.Manual):
         for parts_table in [self.EpochArtifactFree, self.EpochFullLen]:
             parts_table.insert1({**key, **parts_key}, skip_duplicates=True)
 
-    # TODO (feature): use key_filter if passed
     def insert_defaults(self, **kwargs):
+
+        key_filter = kwargs.pop("key_filter", None)
 
         # CASE 1: For single nwb files, insert single contingency runs that are: 1) full length 2) free of artifacts
         epochs_descriptions_name = "valid_single_contingency_runs"
-        for nwb_file_name in np.unique(EpochInterval().fetch("nwb_file_name")):
+        nwb_file_names = np.unique(EpochInterval().fetch("nwb_file_name"))
+
+        # Restrict nwb_file_name if indicated
+        if key_filter is not None:
+            if "nwb_file_name" in key_filter:
+                nwb_file_names = [x for x in nwb_file_names if x == key_filter["nwb_file_name"]]
+
+        for nwb_file_name in nwb_file_names:
 
             # Get single contingency epochs descriptions that are full length and without artifacts
             epochs_descriptions = EpochsDescription().get_single_contingency_descriptions(
@@ -437,7 +444,14 @@ class EpochsDescriptions(dj.Manual):
         # CASE 2: For single nwb files, insert single contingency runs that are: 1) full length 2) free of artifacts
         # 3) contingency is handle alternation
         epochs_descriptions_name = "valid_handleAlternation_runs"
-        for nwb_file_name in np.unique(EpochInterval().fetch("nwb_file_name")):
+        nwb_file_names = np.unique(EpochInterval().fetch("nwb_file_name"))
+
+        # Restrict nwb_file_name if indicated
+        if key_filter is not None:
+            if "nwb_file_name" in key_filter:
+                nwb_file_names = [x for x in nwb_file_names if x == key_filter["nwb_file_name"]]
+
+        for nwb_file_name in nwb_file_names:
 
             # Get single contingency epochs descriptions that are full length and without artifacts
             epochs_descriptions = EpochsDescription().get_single_contingency_descriptions(
@@ -453,7 +467,14 @@ class EpochsDescriptions(dj.Manual):
                 self._insert_parts(key, nwb_file_name, epochs_description)
 
         # CASE 3: For single nwb files on first day of learning, insert single contingency run, one at a time
-        for nwb_file_name in ["J1620210529_.nwb"]:
+        nwb_file_names = ["J1620210529_.nwb"]
+
+        # Restrict nwb_file_name if indicated
+        if key_filter is not None:
+            if "nwb_file_name" in key_filter:
+                nwb_file_names = [x for x in nwb_file_names if x == key_filter["nwb_file_name"]]
+
+        for nwb_file_name in nwb_file_names:
 
             # Get single contingency epochs descriptions that are full length and without artifacts
             epochs_descriptions = EpochsDescription().get_single_contingency_descriptions(
@@ -470,7 +491,15 @@ class EpochsDescriptions(dj.Manual):
                 self._insert_parts(key, nwb_file_name, epochs_description)
 
         # CASE 4: For single epochs for testing, insert single contingency run
-        for nwb_file_name, epochs_description in _get_single_epoch_testing_metadata():
+        nwb_file_name_epochs_descriptions = _get_single_epoch_testing_metadata()
+
+        # Restrict nwb_file_name if indicated
+        if key_filter is not None:
+            if "nwb_file_name" in key_filter:
+                nwb_file_name_epochs_descriptions = [
+                    x for x in nwb_file_name_epochs_descriptions if x[0] == key_filter["nwb_file_name"]]
+
+        for nwb_file_name, epochs_description in nwb_file_name_epochs_descriptions:
 
             # Insert into main table
             key = {
@@ -496,18 +525,18 @@ class EpochsDescriptions(dj.Manual):
             nwb_file_name_epochs_map[nwb_file_name] = epochs
         return nwb_file_name_epochs_map
 
-    def get_epochs(self, nwb_file_name=None, epochs_description_name=None):
+    def get_epochs(self, nwb_file_name=None, epochs_descriptions_name=None):
         # Get epochs for a given nwb_file_name and epochs_description_name
 
         # Get inputs if not passed
         if nwb_file_name is None:
             nwb_file_name = self.fetch1("nwb_file_name")
-        if epochs_description_name is None:
-            epochs_description_name = self.fetch1("epochs_description_name")
+        if epochs_descriptions_name is None:
+            epochs_descriptions_name = self.fetch1("epochs_descriptions_name")
 
         # Get epochs descriptions
         epochs_descriptions = (self & {
-            "nwb_file_name": nwb_file_name, "epochs_description_name": epochs_description_name}).fetch1(
+            "nwb_file_name": nwb_file_name, "epochs_descriptions_name": epochs_descriptions_name}).fetch1(
             "epochs_descriptions")
 
         # Return epochs
@@ -610,6 +639,7 @@ class RecordingSet(NwbfSetBase):
 
         # Run sessions during HR/HL post learning days for SINGLE RATS
         epochs_descriptions_name = "valid_single_contingency_runs"
+
         for subject_id, nwb_file_names in get_reliability_paper_nwb_file_names(as_dict=True).items():
             recording_set_name = self.get_Haight_single_contingency_rotation_set_name([subject_id])
             epochs_descriptions_names = [epochs_descriptions_name]*len(nwb_file_names)
@@ -757,8 +787,9 @@ class RecordingSet(NwbfSetBase):
 
         if "first_day_learning_single_epoch" in recording_set_names_types:
             nwb_file_names = [
-                "J1620210529_.nwb", "mango20211101_.nwb", "june20220412_.nwb", "peanut20201101_.nwb",
-                "fig20211101_.nwb"]
+                "J1620210529_.nwb",
+                # "mango20211129_.nwb", "june20220412_.nwb", "peanut20201101_.nwb", "fig20211101_.nwb",
+            ]
             for nwb_file_name in nwb_file_names:
                 epochs_descriptions = EpochsDescription().get_single_contingency_descriptions(
                     nwb_file_name, exclude_non_full_len=True, exclude_artifact=True)
@@ -833,10 +864,10 @@ class TrainTestEpoch(dj.Manual):
 
     def insert_defaults(self, **kwargs):
         # Insert defaults for decoding analysis for paper 1: same epoch for train and test
-        epochs_description_name = "valid_single_contingency_runs"
+        epochs_descriptions_name = "valid_single_contingency_runs"
         for nwb_file_name in get_reliability_paper_nwb_file_names():
             epochs_descriptions = (EpochsDescriptions & {
-                "nwb_file_name": nwb_file_name, "epochs_description_name": epochs_description_name}).fetch1(
+                "nwb_file_name": nwb_file_name, "epochs_descriptions_name": epochs_descriptions_name}).fetch1(
                 "epochs_descriptions")
             for epochs_description in epochs_descriptions:
                 epoch = (EpochsDescription & {

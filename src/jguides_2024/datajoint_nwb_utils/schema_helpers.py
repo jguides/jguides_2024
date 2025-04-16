@@ -9,11 +9,11 @@ def populate_schema(schema_name, key=None, tolerate_error=False, upstream_schema
                     populate_upstream_limit=None, populate_upstream_num=None):
     # Populate all tables within a schema
 
-    print(f"populating {schema_name}...")
+    print(f"populating schema {schema_name}...")
     print(f"populate_upstream_limit: {populate_upstream_limit}, populate_upstream_num: {populate_upstream_num}\n")
 
     if populate_upstream_limit is None:
-        populate_upstream_limit = 1  # go at most one level up when populating
+        populate_upstream_limit = 0  # dont go any levels up when populating
 
     if populate_upstream_num is None:
         populate_upstream_num = 0
@@ -24,11 +24,11 @@ def populate_schema(schema_name, key=None, tolerate_error=False, upstream_schema
         upstream_num = copy.deepcopy(populate_upstream_num)
         upstream_num += 1
         for populate_fn in upstream_schema_populate_fn_list:
-            populate_fn(key, tolerate_error, populate_upstream_limit, upstream_num)
+            populate_fn(copy.deepcopy(key), tolerate_error, populate_upstream_limit, upstream_num)
 
     for table_name in get_schema_table_names_from_file(schema_name):
         table = get_table(table_name)
-        populate_insert(table, key=key, key_filter=key, tolerate_error=tolerate_error)
+        populate_insert(table, key=copy.deepcopy(key), key_filter=copy.deepcopy(key), tolerate_error=tolerate_error)
 
     print(f"\n")
 

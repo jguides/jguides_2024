@@ -1,3 +1,4 @@
+import copy
 import itertools
 
 import datajoint as dj
@@ -49,10 +50,25 @@ class EpochIntervalListName(ComputedBase):
             pos_time_interval = np.asarray([pos_valid_times[0][0], pos_valid_times[-1][
                 -1]])  # [pos valid time interval start, pos valid time interval end]
             # Store matching pos interval list
-            if np.logical_and(epoch_time_interval_widened[0] < pos_time_interval[0],
-                              epoch_time_interval_widened[1] > pos_time_interval[
-                                  1]):  # if pos valid time interval within epoch interval
-                epoch_matched_pos_interval_list_names.append(pos_interval_list_name)
+            # deal with cases where disconnect more than epsilon, so only start times will be close across intervals
+            if (nwb_file_name, epoch_interval_list_name, pos_interval_list_name) in [
+                ("J1620210604_.nwb", "17_s9", "pos 16 valid times"),
+                ("june20220425_.nwb", "18_h1", "pos 17 valid times"),
+                ("june20220416_.nwb", "19_h2", "pos 18 valid times"),
+                ("peanut20201106_.nwb", "19_h2", "pos 18 valid times"),
+                ("peanut20201106_.nwb", "20_h3", "pos 19 valid times"),
+                ("peanut20201112_.nwb", "17_s9", "pos 16 valid times"),
+                ("peanut20201116_.nwb", "20_h2", "pos 19 valid times"),
+                ("fig20211117_.nwb", "19_h2", "pos 18 valid times"),
+            ]:
+                if epoch_time_interval_widened[0] < pos_time_interval[0]:
+                    epoch_matched_pos_interval_list_names.append(pos_interval_list_name)
+            # all other cases
+            else:
+                if np.logical_and(epoch_time_interval_widened[0] < pos_time_interval[0],
+                                  epoch_time_interval_widened[1] > pos_time_interval[
+                                      1]):  # if pos valid time interval within epoch interval
+                    epoch_matched_pos_interval_list_names.append(pos_interval_list_name)
             # Store close matches for investigating cases where no matching pos interval list name found
             expand_window = 60  # seconds
             start_diff = abs(pos_time_interval[0] - epoch_time_interval_widened[0])

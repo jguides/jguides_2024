@@ -12,7 +12,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_covariate_firing_rate_vector
     CovariateFRVecSelBase, CovariateFRVecAveSummSelBase, CovariateFRVecAveSummSecKeyParamsBase, \
     CovariateAveFRVecParamsBase, CovariateFRVecSTAveSummBase, CovariateAveFRVecSummBase, PathFRVecSummBase, \
     CovariateFRVecParamsBase
-from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_
+from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import delete_, drop_, insert_analysis_table_entry
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
 from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector import FRVec, \
@@ -80,7 +80,7 @@ class PathFRVecParams(CovariateFRVecParamsBase):
         junction_fractions = get_n_junction_path_junction_fractions(2)
         min_ppt = .2
         max_ppt = junction_fractions[0]
-        speed_threshold = 5  # cm/s
+        speed_threshold = 10  # cm/s
         param_names.append(self._get_low_speed_param_name(speed_threshold, min_ppt, max_ppt))
 
         return [[x] for x in param_names]
@@ -119,7 +119,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         primary_kernel_sds = [.1]
         primary_path_fr_vec_param_names = ["none"]  # pair all possible combinations with these
         primary_ppt_dig_param_name = PptDigParams().lookup_param_name([ppt_bin_width])
-        curation_set_name = "runs_analysis_v1"
+        curation_set_name = "runs_analysis_v2"
         brain_region_cohort_name = "all_targeted"
         primary_features = {
             "zscore_fr": 0, "ppt_param_name": "ppt_1", "ppt_dig_param_name": primary_ppt_dig_param_name,
@@ -141,6 +141,7 @@ class PathFRVecSel(CovariateFRVecSelBase):
         primary_path_fr_vec_param_names_2 = [
             "none", "even_odd_trials", "correct_incorrect_trials", "correct_incorrect_stay_trials",
             "prev_correct_incorrect_trials", "even_odd_correct_incorrect_stay_trials",
+            "low_speed_5_ppt_0.2_0.3887090246863618", "low_speed_10_ppt_0.2_0.3887090246863618"
         ]
         primary_zscore_fr = [0, 1]
         primary_kernel_sds_2 = [.1]
@@ -326,7 +327,7 @@ class PathFRVec(CovariateFRVecBase):
             trial_start = trials_time_subset[0]
             trial_stop = trials_time_subset[-1]
 
-            speed_threshold = 5 # low_speed_params["speed_threshold"]
+            speed_threshold = low_speed_params["speed_threshold"]
             valid_bool = np.where(np.logical_and.reduce((
                 speed.index > trial_start, speed.index < trial_stop, speed < speed_threshold)))[0]
 
@@ -490,7 +491,8 @@ class PathFRVecSTAveSel(PathFRVecAveSelBase):
         delete_(self, [PathFRVecSTAve], key, safemode)
 
     def _get_cov_fr_vec_param_names(self):
-        return ["none", "correct_incorrect_stay_trials"]
+        return ["none", "correct_incorrect_stay_trials", "low_speed_5_ppt_0.2_0.3887090246863618",
+                "low_speed_10_ppt_0.2_0.3887090246863618"]
 
 
 # Overrides methods in CovariateFRVecAveBase in a manner specific to path covariate and invariant to trial averaged
@@ -624,7 +626,9 @@ class PathFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
     def _boot_set_names(self):
         return super()._boot_set_names() + self._valid_brain_region_diff_boot_set_names() + \
                self._valid_same_different_outbound_path_correct_diff_boot_set_names() + \
-               self._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names()
+               self._valid_same_different_outbound_path_correct_diff_brain_region_diff_boot_set_names() + \
+               self._valid_low_speed_non_low_speed_diff_boot_set_names() + \
+               self._valid_low_speed_non_low_speed_diff_brain_region_diff_boot_set_names()
 
 
 @schema
@@ -649,19 +653,69 @@ class PathFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
     df_concat_object_id : varchar(40)
     """
 
-    def _default_cov_fr_vec_param_names(self):
-        return ["none", "correct_incorrect_trials", "low_speed_5_ppt_0.2_0.3887090246863618"]
+    class Upstream(dj.Part):
+        definition = """
+        # Achieves dependence on upstream tables
+        -> PathFRVecSTAveSummSel
+        -> BrainRegionCohort
+        -> CurationSet
+        -> PathFRVecSTAve
+        """
 
-    def _default_noncohort_boot_set_names(self):
-        return super()._default_noncohort_boot_set_names() + [
-            "brain_region_diff", "same_different_outbound_path_correct_diff",
-            "same_different_outbound_path_correct_diff_brain_region_diff"]
+    def _default_recording_set_names_boot_set_names_cov_fr_vec_param_names(self, **key_filter):
+        x = [
 
-    def _default_cohort_boot_set_names(self):
-        return super()._default_cohort_boot_set_names() + [
-            "brain_region_diff_rat_cohort",
-            "same_different_outbound_path_correct_diff_rat_cohort",
-            "same_different_outbound_path_correct_diff_brain_region_diff_rat_cohort"]
+            # LATE IN LEARNING
+
+            # Rat cohort
+            # ...all trials
+            (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort", "none"),
+            # ...correct trials
+            (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort",
+             "correct_incorrect_stay_trials"),
+            # ...correct stay trials
+            (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort",
+             "correct_incorrect_trials"),
+            # ...low speed
+            (RecordingSet().lookup_rat_cohort_set_name(), "low_speed_non_low_speed_diff_brain_region_diff_rat_cohort",
+             "low_speed_5_ppt_0.2_0.3887090246863618"),
+            (RecordingSet().lookup_rat_cohort_set_name(), "low_speed_non_low_speed_diff_brain_region_diff_rat_cohort",
+             "low_speed_10_ppt_0.2_0.3887090246863618"),
+            # ...outbound path
+            (RecordingSet().lookup_rat_cohort_set_name(), "same_different_outbound_path_correct_diff_rat_cohort",
+             "correct_incorrect_trials"),
+            (RecordingSet().lookup_rat_cohort_set_name(), "same_different_outbound_path_correct_diff_brain_region_diff_rat_cohort",
+             "correct_incorrect_trials"),
+            ]
+
+        # Non cohort
+        for recording_set_name in RecordingSet().get_recording_set_names(
+                key_filter, ["Haight_rotation"]):
+            # ...all trials
+            x.append((recording_set_name, "default", "none"))
+            # ...correct trials
+            x.append((recording_set_name, "default", "correct_incorrect_trials"))
+            # ...correct stay trials
+            x.append((recording_set_name, "default", "correct_incorrect_stay_trials"))
+            # ...low speed
+            x.append((recording_set_name, "default", "low_speed_5_ppt_0.2_0.3887090246863618"))
+            x.append((recording_set_name, "low_speed_non_low_speed_diff", "low_speed_5_ppt_0.2_0.3887090246863618"))
+            x.append((recording_set_name, "low_speed_non_low_speed_diff_brain_region_diff",
+                      "low_speed_5_ppt_0.2_0.3887090246863618"))
+            x.append((recording_set_name, "low_speed_non_low_speed_diff_brain_region_diff",
+                      "low_speed_10_ppt_0.2_0.3887090246863618"))
+            # ...outbound
+            # x.append((recording_set_name, "same_different_outbound_path_correct", "correct_incorrect_trials"))
+
+        # EARLY IN LEARNING
+
+        # Non cohort
+        for recording_set_name in RecordingSet().get_recording_set_names(
+            key_filter, ["first_day_learning_single_epoch"]):
+            # ...correct trials
+            x.append((recording_set_name, "default", "correct_incorrect_trials"))
+
+        return x
 
     def delete_(self, key, safemode=True):
         # If recording set name not in key but components that determine it are, then
@@ -686,15 +740,6 @@ class PathFRVecSTAveSumm(CovariateFRVecSTAveSummBase, PathFRVecSummBase):
     ave_conf_df_object_id : varchar(40)
     boot_ave_df_object_id : varchar(40)
     """
-
-    class Upstream(dj.Part):
-        definition = """
-        # Achieves dependence on upstream tables
-        -> PathFRVecSTAveSummSel
-        -> BrainRegionCohort
-        -> CurationSet
-        -> PathFRVecSTAve
-        """
 
     @staticmethod
     def _upstream_table():

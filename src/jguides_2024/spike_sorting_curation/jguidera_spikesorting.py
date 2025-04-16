@@ -306,12 +306,21 @@ def define_sort_intervals(targeted_location, nwb_file_name, curation_set_name="r
     # Define sort interval params based on brain region and nwb_file_name
 
     # Define for analysis on runs sessions
-    if curation_set_name in ["runs_analysis_v1", "runs_analysis_v2"]:
+    if curation_set_name in [
+        "runs_analysis_v1", "runs_analysis_v2", "across_runs_analysis_v1", "across_runs_analysis_v2"]:
 
-        if curation_set_name == "runs_analysis_v1":
+        if curation_set_name in ["runs_analysis_v1", "across_runs_analysis_v1"]:
             version_num = None
-        elif curation_set_name == "runs_analysis_v2":
-            version_num = "v2"
+        elif curation_set_name in ["runs_analysis_v2", "across_runs_analysis_v2"]:
+            if targeted_location in ["mPFC", "OFC"]:
+                version_num = "v2"
+            elif targeted_location in ["CA1"]:
+                version_num = None
+            else:
+                raise Exception(f"version_num definition not accounted for, for targeted_location {targeted_location}"
+                                f" and curation_set_name {curation_set_name}")
+        else:
+            raise Exception(f"version_num definition not account for, for curation_set_name {curation_set_name}")
 
         # Case 1: concatenated run and sleep (default)
         starting_interval_list_names_list = [[

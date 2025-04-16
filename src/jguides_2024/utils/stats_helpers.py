@@ -107,6 +107,7 @@ def return_bootstrap_sample(x, rng=None):
 
 
 def average_difference_confidence_interval(x, y, num_bootstrap_samples=1000, alpha=.05, average_function=None):
+    raise Exception(f"Think carefully about whether this is the appropriate function")
     if average_function is None:
         average_function = np.mean
     rng = np.random.default_rng()

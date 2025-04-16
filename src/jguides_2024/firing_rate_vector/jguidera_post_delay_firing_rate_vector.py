@@ -48,7 +48,7 @@ class RelPostDelFRVecParams(SecKeyParamsBase):
 
     def _default_params(self):
         return [[x] for x in [
-            "even_odd_correct_incorrect_stay_trials"]]
+            "even_odd_correct_incorrect_stay_trials", "correct_incorrect_stay_trials"]]
 
     def drop_(self):
         drop_([RelPostDelFRVecSel(), self])  # RelPostDelFRVec(),
@@ -76,7 +76,7 @@ class RelPostDelFRVecSel(CovariateFRVecSelBase):
             "zscore_fr": 0,
             "res_time_bins_pool_param_name": ResTimeBinsPoolSel().lookup_param_name_from_shorthand("epoch_100ms"),
             "rel_time_well_post_delay_dig_param_name": "0.1",
-            "rel_post_del_fr_vec_param_name": "even_odd_correct_incorrect_stay_trials"}
+            "rel_post_del_fr_vec_param_name": "correct_incorrect_stay_trials"}  # even_odd_correct_incorrect_stay_trials
         unit_params = {
             "unit_subset_type": "rand_target_region", "unit_subset_size": 50}
         unit_subset_iterations = np.arange(0, 10)
@@ -229,7 +229,7 @@ class RelPostDelFRVec(CovariateFRVecBase):
         # Alter labels as indicated
         labels_description = (RelPostDelFRVecParams & key).fetch1("labels_description")
 
-        if labels_description == "even_odd_correct_incorrect_stay_trials":
+        if labels_description in ["even_odd_correct_incorrect_stay_trials", "correct_incorrect_stay_trials"]:
 
             # Add text to denote whether "stay" or "leave" trial
             labels, in_intervals_bool_map = self.alter_input_labels_stay_leave(labels, key)
@@ -255,7 +255,7 @@ class RelPostDelFRVec(CovariateFRVecBase):
             pass
 
         else:
-            raise Exception
+            raise Exception(f"Have not coded case for labels_description {labels_description}")
 
         # Plot labels again, now that have altered (if indicated)
         self._plot_labels("post", labels, verbose, ax)

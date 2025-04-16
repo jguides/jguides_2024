@@ -94,6 +94,8 @@ def hierarchical_bootstrap(
     :return:
     """
 
+    print("Performing hierarchical bootstrap (standard)...")
+
     # Check inputs
     if np.sum([x is None for x in [ave_diff_group_column_names_, ave_diff_column_name_]]) == 1:
         raise Exception(f"Either ave_diff_group_column_names_ and ave_diff_column_name_ must both be None, or must "
@@ -137,7 +139,6 @@ def hierarchical_bootstrap(
     pool = mp.Pool(mp.cpu_count())
     results = []
     for idx in range(0, num_bootstrap_samples):
-        print_iteration_progress(idx, num_bootstrap_samples, 100)
         pool.apply_async(_boot, args=(), callback=append_result, error_callback=show_error)
     pool.close()
     pool.join()  # waits until all processes done before running next line

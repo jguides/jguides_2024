@@ -5,7 +5,7 @@ def _get_table(table_name):
    from src.jguides_2024.metadata.jguidera_histology import ValidShank
    from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionColor, ElectrodeGroupTargetedLocation, SortGroupTargetedLocation, BrainRegionSortGroupParams, BrainRegionSortGroup, BrainRegionCohort, CurationSetSel, CurationSet
    from src.jguides_2024.metadata.jguidera_premaze_durations import PremazeDurations
-   from src.jguides_2024.metadata.jguidera_epoch import EpochCohortParams, EpochCohort, RunEpoch, DistinctRunEpochPair, RunEpochPair, SleepEpoch, HomeEpoch, EpochsDescription, EpochFullLen, EpochArtifactFree, EpochsDescriptions, RecordingSet, TrainTestEpoch, TrainTestEpochSet
+   from src.jguides_2024.metadata.jguidera_epoch import EpochFullLen, EpochCohortParams, EpochCohort, RunEpoch, DistinctRunEpochPair, RunEpochPair, SleepEpoch, HomeEpoch, EpochsDescription, EpochArtifactFree, EpochsDescriptions, RecordingSet, TrainTestEpoch, TrainTestEpochSet
    from src.jguides_2024.metadata.jguidera_metadata import JguideraNwbfileSel, JguideraNwbfile, TaskIdentification
    from src.jguides_2024.spike_sorting_curation.jguidera_spikesorting import SpikeSortingRecordingCohortParams, SpikeSortingRecordingCohort
    from src.jguides_2024.spike_sorting_curation.jguidera_reference_electrode import ReferenceElectrode
@@ -37,6 +37,7 @@ def _get_table(table_name):
    from src.jguides_2024.glm.jguidera_basis_function import RaisedCosineBasisParams, RaisedCosineBasis
    from src.jguides_2024.glm.jguidera_el_net import ElNetParams, ElNetSel, ElNet
    from src.jguides_2024.glm.jguidera_measurements_interp_pool import InterceptSel, Intercept, XInterpPoolSel, XInterpPool, XInterpPoolCohortParamName, XInterpPoolCohortParams, XInterpPoolCohort, XInterpPoolCohortEpsCohortParams, XInterpPoolCohortEpsCohort
+   from src.jguides_2024.firing_rate_vector.jguidera_multi_cov_firing_rate_vector_decode import DecodeMultiCovFRVecParams
    from src.jguides_2024.firing_rate_vector.jguidera_well_event_firing_rate_vector_decode import DecodeTimeRelWAFRVecParams, DecodeTimeRelWAFRVecSel, DecodeTimeRelWAFRVec, DecodeTimeRelWAFRVecSummParams, DecodeTimeRelWAFRVecSummSel, DecodeTimeRelWAFRVecSumm
    from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_difference_vector_similarity import FRDiffVecCosSimSel, FRDiffVecCosSim
    from src.jguides_2024.firing_rate_vector.jguidera_firing_rate_vector_euclidean_distance import FRVecEucDistSel, FRVecEucDist

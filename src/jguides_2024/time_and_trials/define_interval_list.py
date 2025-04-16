@@ -36,7 +36,7 @@ class NewIntervalList:
     @staticmethod
     def _valid_starting_interval_list_names():
         valid_starting_interval_list_names = ["raw data valid times"] + [
-            f"pos {x} valid times" for x in np.arange(0, 20)]
+            f"pos {x} valid times" for x in np.arange(0, 22)]
         # Check that no valid starting interval list names are contained within another (important for getting
         # starting interval list names from interval_list_names)
         if any([x in y for idx_x, x in enumerate(valid_starting_interval_list_names) for idx_y, y in enumerate(
@@ -76,6 +76,13 @@ class NewIntervalList:
     @classmethod
     def get_starting_interval_list_names_from_new_interval_list_name(cls, new_interval_list_name):
         # Inverse of define_new_interval_list_name
+
+        # Remove version number
+        split_new_interval_list_name = new_interval_list_name.split("_v")
+        version_num = split_new_interval_list_name[-1]
+        if version_num.isdigit():
+            new_interval_list_name = "_v".join(split_new_interval_list_name[:-1])
+
         # Remove exclusion text
         for fn in ["_no_sleep_text", "_no_home_text", "_no_premaze_text"]:
             text = getattr(cls, fn)()
@@ -87,9 +94,9 @@ class NewIntervalList:
         starting_interval_list_names = [
             x for x in cls._valid_starting_interval_list_names() if x in new_interval_list_name]
         if len(" ".join(starting_interval_list_names)) != len(new_interval_list_name):
-            raise Exception(f"starting_interval_list_names not as expected; one way this can happen is if passed"
+            raise Exception(f"starting_interval_list_names not as expected; one way this can happen is if passed "
                             f"new_interval_list_name is not constructed solely from _valid_starting_interval_list_names"
-                            f"and exclusion text")
+                            f" and exclusion text")
         return starting_interval_list_names
 
     @classmethod

@@ -51,7 +51,7 @@ class GLMContainer:
 
     def __init__(self, nwb_file_name, epochs, glm_restriction_df,  # varies across models
                  el_net_param_name,
-                 curation_set_name="runs_analysis_v1", brain_region_cohort_name="all_targeted",
+                 curation_set_name="runs_analysis_v2", brain_region_cohort_name="all_targeted",
                  min_epoch_mean_firing_rate=.1, min_num_spikes=1, sigmas=None, similarity_metrics=None,
                  tolerate_missing_units=False, verbose=True):
         self.nwb_file_name = nwb_file_name
@@ -122,7 +122,7 @@ class GLMContainer:
         return BrainRegionUnits().get_unit_name_df(
             self.nwb_file_name, self.units_params["brain_region_units_param_name"],
             self.units_params["curation_set_name"], self.units_params["brain_region_cohort_name"],
-            epochs_description)
+            epochs_description=epochs_description)
 
     def _get_file_name_base(self, glm_restriction_idx=None):
         glm_restriction_name = None
@@ -876,7 +876,7 @@ class GLMContainer:
             return df_from_data_list(data_list, ["condition", "k", "column_idx", "color"])
 
         def plot_coeff(self, brain_regions=None, glm_restriction_idx=None, sigma=None, similarity_metric=None,
-                       num_columns=2, subplot_width=3, subplot_height=2, max_plots=5):
+                       unit_names=None, num_columns=2, subplot_width=3, subplot_height=2, max_plots=5):
             # Plot nnls coefficients and similarity array for single units
 
             # Get inputs if not passed
@@ -894,7 +894,9 @@ class GLMContainer:
             for brain_region in brain_regions:
                 df_subset = df_filter_columns(
                     self.basis_estimation_df.iloc[glm_restriction_idx].metrics_df, {"brain_region": brain_region})
-                unit_names = df_subset.index
+                if unit_names is None:
+                    unit_names = df_subset.index
+                unit_names = [x for x in unit_names if x in df_subset.index]
                 for unit_name_idx, unit_name in enumerate(unit_names):
 
                     # Continue if reached plot number limit

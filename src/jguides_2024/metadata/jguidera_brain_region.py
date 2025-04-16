@@ -264,25 +264,24 @@ class BrainRegionCohort(dj.Manual):
     brain_regions : blob
     """
 
-    def insert1(self, key, **kwargs):
-        if any([np.logical_and(check_set_equality(
-                (self & k).fetch1("brain_regions"), key["brain_regions"], tolerate_error=True),
-                k["brain_region_cohort_name"] != key["brain_region_cohort_name"])
-            for k in (self & {"nwb_file_name": key["nwb_file_name"]}).fetch("KEY")]):
-            raise Exception(
-                "cohort already exists with nwb_file_name {nwb_file_name} and brain region {brain_region}".format(
-                    **key))
-        skip_duplicates = kwargs.pop("skip_duplicates", True)
-        super().insert1(key, skip_duplicates=skip_duplicates)
-
     def insert_defaults(self, **kwargs):
+
         for nwb_file_name in JguideraNwbfile.fetch("nwb_file_name"):
             for cohort_name_suffix, targeted in zip(["targeted", ""], [True, False]):
                 brain_region_cohort_name = f"all{format_bool(targeted, cohort_name_suffix, prepend_underscore=True)}"
                 brain_regions = get_brain_regions(nwb_file_name, targeted=targeted)
                 self.insert1({"nwb_file_name": nwb_file_name,
                               "brain_region_cohort_name": brain_region_cohort_name,
-                              "brain_regions": brain_regions})
+                              "brain_regions": brain_regions}, skip_duplicates=True)
+
+        # temporary until process CA1 data
+        for nwb_file_name in ["J1620210529_.nwb", "J1620210531_.nwb",
+                              "mango20211129_.nwb", "mango20211130_.nwb",
+                              "june20220412_.nwb", "june20220415_.nwb",
+                              ]:
+            self.insert1({"nwb_file_name": nwb_file_name,
+                          "brain_region_cohort_name": "mPFC_targeted_OFC_targeted",
+                          "brain_regions": ["mPFC_targeted", "OFC_targeted"]}, skip_duplicates=True)
 
     def lookup_cohort_name(self, nwb_file_name, brain_regions):
         return unpack_single_element([k["brain_region_cohort_name"] for k in (
@@ -293,18 +292,46 @@ class BrainRegionCohort(dj.Manual):
 @schema
 class CurationSetSel(SelBase):
     definition = """
-    # Selection from upstream taEpsUnitsSelbles for CurationSet
+    # Selection from upstream tables for CurationSet
     -> BrainRegionCohort
     curation_set_name : varchar(40)
     """
 
     def _get_potential_keys(self, key_filter=None):
-        brain_region_cohort_name = "all_targeted"
-        curation_set_name = "runs_analysis_v1"
 
-        return [
+        brain_region_cohort_name = "all_targeted"
+
+        # "runs analysis": single run sessions. v1: probe geometry issue. v2: after probe geometry fixed.
+        curation_set_names = ["runs_analysis_v1", "runs_analysis_v2"]
+
+        potential_keys = [
             {"nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
-             "curation_set_name": curation_set_name} for nwb_file_name in get_jguidera_nwbf_names(high_priority=True)]
+             "curation_set_name": curation_set_name} for nwb_file_name in JguideraNwbfile().fetch("nwb_file_name")
+        for curation_set_name in curation_set_names
+        ]
+
+        # "across runs analysis": units that are present across run sessions. v1: probe geometry issue. v2: after probe
+        # geometry fixed.
+        curation_set_names = ["across_runs_analysis_v2"]
+        potential_keys += [
+            {"nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
+             "curation_set_name": curation_set_name} for nwb_file_name in ["J1620210529_.nwb", "J1620210531_.nwb"]
+        for curation_set_name in curation_set_names
+        ]
+
+        # !!! temporary until processed CA1 data
+        nwb_file_names = ["J1620210529_.nwb", "J1620210531_.nwb",
+                          "mango20211129_.nwb", "mango20211130_.nwb",
+                          "june20220412_.nwb", "june20220415_.nwb", ]
+        brain_region_cohort_name = "mPFC_targeted_OFC_targeted"
+        curation_set_names = ["runs_analysis_v2", "across_runs_analysis_v2"]
+        for curation_set_name in curation_set_names:
+            for nwb_file_name in nwb_file_names:
+                potential_keys += [{"nwb_file_name": nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
+                                "curation_set_name": curation_set_name,
+                                }]
+
+        return potential_keys
 
 
 @schema
@@ -342,20 +369,31 @@ class CurationSet(ComputedBase):
                 # Get curation ID
                 curation_name = get_curation_name(obj.sort_interval_name, curation_id)
 
-                # single epoch sort
-                if "pos" in obj.interval_list_name:
-                    # match up current interval list name with appropriate epoch
-                    interval_list_name = obj.interval_list_name.split(" no premaze")[0].split(" no home")[0]
-                    epoch = EpochIntervalListName().get_epoch(nwb_file_name, interval_list_name)
-                    epochs_description = EpochsDescription().get_single_run_description(nwb_file_name, epoch)
-                    epochs_descriptions = [epochs_description]
+                # Single run sessions
+                if curation_set_name in ["runs_analysis_v1", "runs_analysis_v2"]:
 
-                # across runs (and potentially sleeps) sort
+                    # single epoch sort
+                    if "pos" in obj.interval_list_name:
+                        # match up current interval list name with appropriate epoch
+                        interval_list_name = obj.interval_list_name.split(" no premaze")[0].split(" no home")[0]
+                        epoch = EpochIntervalListName().get_epoch(nwb_file_name, interval_list_name)
+                        epochs_description = EpochsDescription().get_single_run_description(nwb_file_name, epoch)
+                        epochs_descriptions = [epochs_description]
+
+                    # across runs (and potentially sleeps) sort
+                    else:
+                        epochs_descriptions = EpochsDescription().get_single_run_descriptions(nwb_file_name)
+
+                    for epochs_description in epochs_descriptions:
+                        data_list.append((curation_name, nwb_file_name, brain_region, epochs_description))
+
+                # All run sessions
+                elif curation_set_name in ["across_runs_analysis_v1", "across_runs_analysis_v2"]:
+
+                    data_list.append((curation_name, nwb_file_name, brain_region, "runs"))
+
                 else:
-                    epochs_descriptions = EpochsDescription().get_single_run_descriptions(nwb_file_name)
-
-                for epochs_description in epochs_descriptions:
-                    data_list.append((curation_name, nwb_file_name, brain_region, epochs_description))
+                    raise Exception(f"curation_set_name {curation_set_name} not accounted for")
 
         curation_names_df = df_from_data_list(data_list, [
             "curation_name", "nwb_file_name", "brain_region", "epochs_description"])

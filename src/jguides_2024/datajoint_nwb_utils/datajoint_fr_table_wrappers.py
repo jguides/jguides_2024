@@ -13,7 +13,8 @@ from src.jguides_2024.firing_rate_map.jguidera_well_arrival_departure_firing_rat
 from src.jguides_2024.firing_rate_map.jguidera_well_arrival_firing_rate_map import STFrmapWellArrivalSm, \
     FrmapUniqueWellArrivalSm
 from src.jguides_2024.metadata.jguidera_brain_region import BrainRegionColor, BrainRegionCohort, \
-    SortGroupTargetedLocation
+    SortGroupTargetedLocation, CurationSet
+from src.jguides_2024.metadata.jguidera_epoch import EpochsDescription
 from src.jguides_2024.metadata.jguidera_metadata import TaskIdentification
 from src.jguides_2024.position_and_maze.jguidera_maze import EnvironmentColor, MazePathWell, RewardWellPath
 from src.jguides_2024.spikes.jguidera_unit import BrainRegionUnits, BrainRegionUnitsParams
@@ -109,7 +110,7 @@ class PlotSTFRMap:
                                           brain_regions=None,
                                           unit_names=None,  # use to restrict to a subset of units
                                           firing_rate_bounds_type="IQR",
-                                          curation_set_name="runs_analysis_v1",
+                                          curation_set_name="runs_analysis_v2",
                                           min_epoch_mean_firing_rate=.1,
                                           plot_performance_outcomes=True,
                                           plot_environment_marker=True,
@@ -121,8 +122,8 @@ class PlotSTFRMap:
                                           populate_tables=True,
                                           fig=None,
                                           subplot_width=3,
-                                          subplot_height=2.5,
-                                          height_ratios=np.asarray([1, 1]),
+                                          subplot_height=1.5, # 2.5,
+                                          height_ratios=np.asarray([2, 1]),
                                           sharey="columns",
                                           num_mega_rows_top=0,
                                           num_mega_rows_bottom=0,
@@ -179,8 +180,9 @@ class PlotSTFRMap:
 
         # Plot parameters
         # ...gap between plots
-        wspace = .3
-        hspace = None
+        wspace = .1  # .3
+        hspace = 0  # None
+        mega_row_gap_factor = .1
         row_iterables = ["trial_fr", "average_fr"]
         # ...location where performance outcomes are plotted on x axis
         performance_outcome_x_val = -1
@@ -219,6 +221,7 @@ class PlotSTFRMap:
                 num_mega_rows_bottom=num_mega_rows_bottom, num_mega_columns_left=num_mega_columns_left,
                 num_mega_columns_right=num_mega_columns_right, fig=fig, sharex="columns", sharey=sharey,
                 subplot_width=subplot_width, subplot_height=subplot_height,
+                mega_row_gap_factor=mega_row_gap_factor,
                 wspace=wspace, hspace=hspace, height_ratios=height_ratios)
 
             # Find min and max firing rate for this unit across all epochs and restrict_maze_names to use as clim
@@ -226,6 +229,15 @@ class PlotSTFRMap:
             fr_list = []
             for restriction_idx, restriction in enumerate(self.restrictions):
                 for epoch_idx, epoch in enumerate(self.epochs):
+
+                    # Get firing rate df
+                    # ...Add curation_name to key
+                    epochs_description = EpochsDescription().get_single_run_description(self.nwb_file_name, epoch)
+                    curation_name = (CurationSet & {
+                        "nwb_file_name": self.nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
+                        "curation_set_name": curation_set_name}).get_curation_name(brain_region, epochs_description)
+                    key.update({"curation_name": curation_name})
+
                     fr_df = self._get_fr_df(key, epoch, restriction, populate_tables)
                     if fr_df is None:
                         continue
@@ -249,7 +261,15 @@ class PlotSTFRMap:
                 # Loop through epochs
                 for epoch_idx, epoch in enumerate(self.epochs):
 
-                    # Get firing rate. Set populate_tables to False since already would have populated tables above
+                    # Get firing rate df. Set populate_tables to False since already would have populated tables above
+
+                    # ...Add curation_name to key
+                    epochs_description = EpochsDescription().get_single_run_description(self.nwb_file_name, epoch)
+                    curation_name = (CurationSet & {
+                        "nwb_file_name": self.nwb_file_name, "brain_region_cohort_name": brain_region_cohort_name,
+                        "curation_set_name": curation_set_name}).get_curation_name(brain_region, epochs_description)
+                    key.update({"curation_name": curation_name})
+
                     fr_df = self._get_fr_df(key, epoch, restriction, populate_tables=False)
                     if fr_df is None:
                         for row_iterable in row_iterables:
@@ -312,11 +332,14 @@ class PlotSTFRMap:
 
                     # ...get bounds on mean firing rate (confidence interval around mean, or IQR of firing rates),
                     # excluding nans
-                    if firing_rate_bounds_type == "mean_CI":
-                        fr_bounds = [average_confidence_interval(
-                        x, exclude_nan=True, average_function=average_function) for x in fr_arr.T]
-                    elif firing_rate_bounds_type == "IQR":
-                        fr_bounds = [np.percentile(x[np.invert(np.isnan(x))], [25, 75]) for x in fr_arr.T]
+                    if np.shape(fr_arr)[0] == 1:  # if only one trial, firing rate bounds are just mean firing rate
+                        fr_bounds = list(zip(fr_arr[0], fr_arr[0]))
+                    else:  # more than one trial
+                        if firing_rate_bounds_type == "mean_CI":
+                            fr_bounds = [average_confidence_interval(
+                            x, exclude_nan=True, average_function=average_function) for x in fr_arr.T]
+                        elif firing_rate_bounds_type == "IQR":
+                            fr_bounds = [np.percentile(x[np.invert(np.isnan(x))], [25, 75]) for x in fr_arr.T]
 
                     # ...plot average and bounds
                     mean = average_function(fr_arr, axis=0)

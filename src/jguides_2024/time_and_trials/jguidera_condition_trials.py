@@ -64,10 +64,11 @@ class ConditionTrialsSel(SelBase):
         # Currently, limit population to path traversals and delay period for single epochs, and GLM analysis params
 
         # Get nwb files / epochs (limit to highest priority)
-        highest_priority = True
-        nwbf_epoch_keys = get_jguidera_nwbf_epoch_keys(highest_priority=highest_priority)
+        nwbf_epoch_keys = get_jguidera_nwbf_epoch_keys(highest_priority=False, high_priority=False)
         nwbf_epoch_keys = [{k.replace("epoch", "epochs_id"): str(v) for k, v in key.items()}
                            for key in nwbf_epoch_keys]  # convert epoch to epochs id and render as string
+        if "nwb_file_name" in key_filter:
+            nwbf_epoch_keys = [x for x in nwbf_epoch_keys if x["nwb_file_name"] == key_filter["nwb_file_name"]]
 
         # Loop through path / delay period using GLM params
         keys = []

@@ -280,13 +280,15 @@ def get_thesis_nwb_file_names():
         "J1620210606_.nwb", "mango20211207_.nwb", "june20220419_.nwb", "peanut20201108_.nwb", "fig20211109_.nwb"])
 
 
-def get_reliability_paper_nwb_file_names(as_dict=False):
+def get_reliability_paper_nwb_file_names(as_dict=False, restrict_dual_mPFC_OFC=False):
     paper_nwb_file_names_map = {
         "J16": ["J1620210605_.nwb", "J1620210606_.nwb", "J1620210607_.nwb"],
         "mango": ["mango20211205_.nwb", "mango20211206_.nwb", "mango20211207_.nwb"],
         "june": ["june20220419_.nwb", "june20220420_.nwb", "june20220421_.nwb"],
         "peanut": ["peanut20201107_.nwb", "peanut20201108_.nwb", "peanut20201109_.nwb"],
         "fig": ["fig20211108_.nwb", "fig20211109_.nwb", "fig20211110_.nwb"]}
+    if restrict_dual_mPFC_OFC:
+        paper_nwb_file_names_map = {k: v for k, v in paper_nwb_file_names_map.items() if k in ["J16", "mango", "june"]}
     if as_dict:
         return paper_nwb_file_names_map
     return np.concatenate(list(paper_nwb_file_names_map.values()))

@@ -133,7 +133,7 @@ class TrialsPoolCohortParams(PoolCohortParamsBase):
     num_trials_pool_param_names : int  # for convenience
     """
 
-    def insert_single_member_cohort_defaults(self):
+    def insert_single_member_cohort_defaults(self, **kwargs):
         # Populate cohort table with single member cohort entries
 
         # Restrict population with these params
@@ -159,7 +159,7 @@ class TrialsPoolCohortParams(PoolCohortParamsBase):
                 # ENTIRE EPOCH
                 {"source_table_name": "EpochInterval"}]
         for param_name_dict in param_name_dicts:
-            self.insert_single_member_cohort(param_name_dict)
+            self.insert_single_member_cohort(param_name_dict, **kwargs)
 
     def insert_test(self):
         # Insert an entry with two upstream trial entries
@@ -177,7 +177,7 @@ class TrialsPoolCohortParams(PoolCohortParamsBase):
             print(f"Could not insert test entry into {get_table_name(self)}")
 
     def insert_defaults(self, **kwargs):
-        self.insert_single_member_cohort_defaults()
+        self.insert_single_member_cohort_defaults(**kwargs)
 
     def delete_(self, key, safemode=True):
         # If trials_pool_param_name in key but trials_pool_param_names not in key, find all trials_pool_param_names

@@ -112,7 +112,7 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
                 TimeRelWADigSingleAxisParams().lookup_param_name(x)
                 for x in [[-1, 3]]]  # make all combinations with each of these
         brain_region_cohort_name = "all_targeted"
-        curation_set_name = "runs_analysis_v1"
+        curation_set_name = "runs_analysis_v2"
         primary_features = {
             "time_rel_wa_fr_vec_param_name": "none", "zscore_fr": 0,
             "time_rel_wa_dig_param_name": TimeRelWADigParams().lookup_param_name([.25]),
@@ -235,7 +235,8 @@ class TimeRelWAFRVecSel(CovariateFRVecSelBase):
         drop_([TimeRelWAAveFRVecSel(), TimeRelWAFRVecSTAveSel(), TimeRelWAFRVec(), self])
 
 
-# TODO: if drop this table, could add secondary key to track samples that were excluded because they fell within both stay/leave trials
+# TODO: if drop this table, could add secondary key to track samples that were excluded because they fell within
+#  both stay/leave trials
 @schema
 class TimeRelWAFRVec(CovariateFRVecBase):
     definition = """
@@ -697,6 +698,7 @@ class TimeRelWAFRVecSTAveSummParams(CovariateFRVecAveSummSecKeyParamsBase):
 
 @schema
 class TimeRelWAFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
+# class TimeRelWAFRVecSTAveSummSel(dj.Manual):  # use to initialize table
     definition = """
     # Selection from upstream tables for TimeRelWAFRVecSTAveSumm
     -> RecordingSet
@@ -712,28 +714,51 @@ class TimeRelWAFRVecSTAveSummSel(CovariateFRVecAveSummSelBase):
     -> TimeRelWAFRVecSTAveSummParams
     ---
     upstream_keys : mediumblob
+    -> nd.common.AnalysisNwbfile
+    df_concat_object_id : varchar(40)
     """
 
-    def _default_noncohort_boot_set_names(self):
-        return super()._default_noncohort_boot_set_names() + [
-            "brain_region_diff", "stay_leave_diff", "stay_leave_diff_brain_region_diff"]
+    class Upstream(dj.Part):
+        definition = """
+        # Achieves upstream dependence on upstream tables
+        -> TimeRelWAFRVecSTAveSummSel
+        -> BrainRegionCohort
+        -> CurationSet
+        -> TimeRelWAFRVecSTAve
+        """
 
-    def _default_cohort_boot_set_names(self):
-        return super()._default_cohort_boot_set_names() + [
-            "brain_region_diff_rat_cohort", "stay_leave_diff_rat_cohort",
-            "stay_leave_diff_brain_region_diff_rat_cohort"]
+    def _default_recording_set_names_boot_set_names_cov_fr_vec_param_names(self, **key_filter):
+        x = [
 
-    def _default_cov_fr_vec_param_names(self):
-        return ["none", "stay_leave_trials_pre_departure"]
+            # Rat cohort
+            # ...all trials
+            # (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort", "none"),
+            # ...correct trials
+            (RecordingSet().lookup_rat_cohort_set_name(), "brain_region_diff_rat_cohort",
+             "correct_incorrect_stay_trials_pdaw"),
+            # ...stay/leave
+            (RecordingSet().lookup_rat_cohort_set_name(), "stay_leave_diff_rat_cohort",
+             "stay_leave_trials_pre_departure"),
+            (RecordingSet().lookup_rat_cohort_set_name(), "stay_leave_diff_brain_region_diff_rat_cohort",
+             "stay_leave_trials_pre_departure"),
+            ]
 
-    # # Override parent class method so can look at reliability of firing rate vector geometry and dynamics
-    # # during delay period on first day of learning
-    # def _recording_set_name_types(self):
-    #     return super()._recording_set_name_types() + ["first_day_learning_single_epoch"]
+        # Non cohort
+        for recording_set_name in RecordingSet().get_recording_set_names(
+                key_filter, ["Haight_rotation"]):
+            # ...correct trials
+            x.append((recording_set_name, "default", "correct_incorrect_stay_trials_pdaw"))
+            # ...stay/leave
+            x.append((recording_set_name, "default", "stay_leave_trials_pre_departure"))
+            x.append((recording_set_name, "stay_leave_diff", "stay_leave_trials_pre_departure"))
+            x.append((recording_set_name, "stay_leave_diff_brain_region_diff", "stay_leave_trials_pre_departure"))
+
+        return x
 
 
 @schema
 class TimeRelWAFRVecSTAveSumm(CovariateFRVecSTAveSummBase, TimeRelWAFRVecSummBase):
+# class TimeRelWAFRVecSTAveSumm(dj.Computed):  # use to initialize table
     definition = """
     # Summary of single 'trial' comparison of firing rate vectors
     -> TimeRelWAFRVecSTAveSummSel
@@ -743,15 +768,6 @@ class TimeRelWAFRVecSTAveSumm(CovariateFRVecSTAveSummBase, TimeRelWAFRVecSummBas
     ave_conf_df_object_id : varchar(40)
     boot_ave_df_object_id : varchar(40)
     """
-
-    class Upstream(dj.Part):
-        definition = """
-        # Achieves upstream dependence on upstream tables
-        -> TimeRelWAFRVecSTAveSumm
-        -> BrainRegionCohort
-        -> CurationSet
-        -> TimeRelWAFRVecSTAve
-        """
 
     @staticmethod
     def _upstream_table():

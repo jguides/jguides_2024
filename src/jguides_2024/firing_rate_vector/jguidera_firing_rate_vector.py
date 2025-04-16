@@ -21,7 +21,7 @@ from src.jguides_2024.utils.df_helpers import unpack_single_df, df_filter_column
 from src.jguides_2024.utils.dict_helpers import check_equality, dict_comprehension
 from src.jguides_2024.utils.list_helpers import check_single_element
 from src.jguides_2024.utils.set_helpers import check_membership
-from src.jguides_2024.utils.vector_helpers import check_all_unique, unpack_single_vector
+from src.jguides_2024.utils.vector_helpers import check_all_unique, unpack_single_vector, unpack_single_element
 
 # Needed for table definitions:
 TaskIdentification
@@ -80,6 +80,9 @@ class FRVecSel(SelBase):
         return False
 
     def _get_potential_keys(self, key_filter=None):
+
+        print(f"Getting potential keys for FRVecSel...")
+
         # Get inputs if not passed
         if key_filter is None:
             key_filter = dict()
@@ -105,16 +108,33 @@ class FRVecSel(SelBase):
         # Get map from (nwb_file_name, epochs_description) to epoch, in case of valid single epochs
 
         # Get map that indicates which epochs are valid for which nwb files
+        # ...define valid epochs as valid single contingency runs
         epochs_descriptions_name = "valid_single_contingency_runs"
         key = {"epochs_descriptions_name": epochs_descriptions_name}
         valid_nwb_file_name_epochs_map = (EpochsDescriptions & key).get_nwb_file_name_epochs_map()
-        # Get starting nwb files / epochs
+        # ...Get starting nwb files / epochs
         nwb_file_names, epochs_descriptions, epochs_list = EpochsDescription().fetch(
             "nwb_file_name", "epochs_description", "epochs")
-        # add nwb file names with empty epochs list to avoid error below
+        # ...Add nwb file names with empty epochs list to avoid error below
         for nwb_file_name in nwb_file_names:
             if nwb_file_name not in valid_nwb_file_name_epochs_map:
                 valid_nwb_file_name_epochs_map[nwb_file_name] = []  # indicate no valid epochs
+        # ...add select other epochs
+        # add within session contingency switch sessions from first day where this is introduced
+        nwb_file_name = "J1620210607_.nwb"
+        for epochs_description in ["run7", "run8"]:
+            valid_nwb_file_name_epochs_map[nwb_file_name] += (EpochsDescription & {
+                    "nwb_file_name": nwb_file_name, "epochs_description": epochs_description}).fetch1("epochs")
+        nwb_file_name = "mango20211207_.nwb"
+        for epochs_description in ["run7", "run8"]:
+            valid_nwb_file_name_epochs_map[nwb_file_name] += (EpochsDescription & {
+                "nwb_file_name": nwb_file_name, "epochs_description": epochs_description}).fetch1("epochs")
+        nwb_file_name = "june20220421_.nwb"
+        for epochs_description in ["run7", "run8"]:
+            valid_nwb_file_name_epochs_map[nwb_file_name] += (EpochsDescription & {
+                "nwb_file_name": nwb_file_name, "epochs_description": epochs_description}).fetch1("epochs")
+        # ...Print valid epochs so user aware
+        print("valid_nwb_file_name_epochs_map: ", valid_nwb_file_name_epochs_map)
 
         valid_bool = [
             np.logical_and(

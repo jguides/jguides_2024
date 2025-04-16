@@ -67,7 +67,7 @@ def get_fractional_edge_position(linear_position, linear_position_edge_idxs, edg
 
 
 def fetch1_dataframe_position_info(table_entry):
-    nwb_data = unpack_single_element(table_entry.fetch_nwb())
+    nwb_data = unpack_single_element(table_entry.fetch_nwb(close_file=False))
     index = pd.Index(np.asarray(
         nwb_data['head_position'].get_spatial_series().timestamps), name='time')
     columns = ['head_position_x', 'head_position_y', 'head_orientation',
@@ -451,9 +451,6 @@ def digitize_linear_position_rescaled_wrapper(nwb_file_name, epoch, new_index, b
 def populate_jguidera_position(key=None, tolerate_error=False):
     from src.jguides_2024.position_and_maze.populate_position_tables import populate_position_tables_wrapper  # local import to avoid circular import error
     populate_position_tables_wrapper([key], tolerate_error=tolerate_error)  # populate lab position_and_maze tables
-    for table_name in get_schema_table_names_from_file(schema_name):
-        table = eval(table_name)
-        populate_insert(table, key=key, tolerate_error=tolerate_error)
 
 
 def drop_jguidera_position():

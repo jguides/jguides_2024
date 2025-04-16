@@ -1253,6 +1253,10 @@ class MazePathWell:
 
                 "same_path_outbound_correct_correct_stay_trials": cls.get_outbound_path_names,
 
+                "same_path_low_speed_non_low_speed_trials": cls.get_rewarded_path_names,
+                "same_path_non_low_speed_non_low_speed_trials": cls.get_rewarded_path_names,
+                "same_path_low_speed_low_speed_trials": cls.get_rewarded_path_names,
+
                 "same_path_even_odd_trials": cls.get_rewarded_path_names,
                 "same_path_even_odd_stay_trials": cls.get_rewarded_path_names,
                 "same_path_even_odd_correct_stay_trials": cls.get_rewarded_path_names,
@@ -1333,20 +1337,40 @@ class MazePathWell:
         return f"{label_name}_{trial_text}"
 
     @classmethod
-    def split_stay_leave_trial_path_name(cls, stay_leave_trial_path_name, trial_text=None):
+    def split_stay_leave_trial_path_name(cls, path_name, trial_text=None):
 
         # Get trial text if not passed
         if trial_text is None:
             trial_text = unpack_single_element(
-                [x for x in cls.stay_leave_trial_text() if stay_leave_trial_path_name.endswith(x)])
+                [x for x in cls.stay_leave_trial_text() if path_name.endswith(x)])
 
         # Check inputs
         check_membership([trial_text], cls.stay_leave_trial_text())
-        if not stay_leave_trial_path_name.endswith(trial_text):
-            raise Exception(f"{stay_leave_trial_path_name} must end with {trial_text}")
+        if not path_name.endswith(trial_text):
+            raise Exception(f"{path_name} must end with {trial_text}")
 
         num_exclude = len(trial_text) + 1  # add one to exclude underscore prior to trial text
-        return stay_leave_trial_path_name[:-num_exclude]
+        return path_name[:-num_exclude]
+
+    @classmethod
+    def split_non_low_speed_low_speed_trial_path_name(cls, path_name, trial_text=None):
+
+        # Get trial text if not passed
+        if trial_text is None:
+            if path_name.endswith(cls.low_speed_trial_text("non_low_speed")):
+                trial_text = cls.low_speed_trial_text("non_low_speed")
+            elif path_name.endswith(cls.low_speed_trial_text("low_speed")):
+                trial_text = cls.low_speed_trial_text("low_speed")
+            else:
+                raise Exception(f"trial text not identified")
+
+        # Check inputs
+        check_membership([trial_text], cls.low_speed_trial_text())
+        if not path_name.endswith(trial_text):
+            raise Exception(f"{path_name} must end with {trial_text}")
+
+        num_exclude = len(trial_text) + 1  # add one to exclude underscore prior to trial text
+        return path_name[:-num_exclude]
 
     @staticmethod
     def stay_leave_trial_text(text_type=None):
@@ -1441,7 +1465,11 @@ class MazePathWell:
             "same_path_outbound_correct_incorrect_trials", "same_path_outbound_correct_correct_trials",
             "same_path_outbound_correct_correct_stay_trials",
             "same_path_outbound_prev_correct_incorrect_trials",
-            "same_path_correct_incorrect_stay_trials"]:
+            "same_path_correct_incorrect_stay_trials",
+
+            "same_path_low_speed_non_low_speed_trials", "same_path_low_speed_low_speed_trials",
+            "same_path_non_low_speed_non_low_speed_trials",
+        ]:
             param_names = ["nwb_file_name", "epoch", "contingency"]
             path_name_pairs = [(x, x) for x in fn(**_get_param_names(params, param_names))]  # pairs of same path
 
@@ -1557,6 +1585,19 @@ class MazePathWell:
                 (cls.get_correct_incorrect_trial_text(stay_trials_fn(x1, trial_text=stay_text), t1, previous_trial),
                  cls.get_correct_incorrect_trial_text(stay_trials_fn(x2, trial_text=stay_text), t2, previous_trial))
                 for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
+
+        # If want
+        elif "low_speed" in name:
+            if "non_low_speed_non_low_speed" in name:
+                t1 = t2 = cls.low_speed_trial_text("non_low_speed")
+            elif "low_speed_non_low_speed" in name:
+                t1, t2 = cls.low_speed_trial_text()
+            elif "low_speed_low_speed" in name:
+                t1 = t2 = cls.low_speed_trial_text("low_speed")
+            suffix_sets = _get_suffix_sets(t1, t2, symmetric_suffix)
+            return [
+                (cls.get_low_speed_trial_label_name(x1, t1),
+                 cls.get_low_speed_trial_label_name(x2, t2)) for x1, x2 in path_name_pairs for t1, t2 in suffix_sets]
 
         # Otherwise return path name pairs unaltered
         return path_name_pairs

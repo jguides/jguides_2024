@@ -75,7 +75,7 @@ class ElNetSel(SelBase):
     unit_id : int
     """
 
-    def _get_potential_keys(self, key_filter=None, verbose=True):
+    def _get_potential_keys(self, key_filter=None, verbose=False):
         if key_filter is None:
             key_filter = dict()
         keys = []
@@ -92,14 +92,16 @@ class ElNetSel(SelBase):
                             "epoch", "res_time_bins_pool_param_name"]], as_dict=True):
                 if verbose:
                     print(f"On k2 {k2}...")
-                if all([ResEpochSpikeCounts & {**k2, **k3} for k3 in
-                        k3_list]):  # proceed if entry for all epochs in cohort
+                k4_list = [{**k2, **k3} for k3 in k3_list]
+                if all([ResEpochSpikeCounts & x for x in k4_list]):  # proceed if entry for all epochs in cohort
                     insert_key = {**k1, **k2}
                     if verbose:
                         print(f"Adding keys...")
                     for k3 in (ResEpochSpikeCounts.Unit & insert_key).fetch("KEY"):
                         insert_key.update({"unit_id": k3["unit_id"]})
                         keys.append(copy.deepcopy(insert_key))
+                else:
+                    print(f"Cannot insert, ResEpochSpikeCounts not fully populated for each of these keys: {k4_list}")
         if verbose:
             print(f"Returning keys...")
         return keys
@@ -221,7 +223,7 @@ class ElNet(ComputedBase):
         return df
 
     def print_populated(
-            self, el_net_param_name=None, curation_set_name="runs_analysis_v1",
+            self, el_net_param_name=None, curation_set_name="runs_analysis_v2",
             res_time_bins_pool_cohort_param_name=None, x_interp_pool_cohort_param_name=None, populate_tables=True,
             verbose=True, return_keys=False, nwb_file_names=None):
 

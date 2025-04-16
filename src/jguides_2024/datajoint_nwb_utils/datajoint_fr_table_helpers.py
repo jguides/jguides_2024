@@ -135,9 +135,9 @@ def make_well_trial_table_fr_df_trial_subsets(
     bin_edges, bin_centers, epoch_spike_times = _get_info_for_well_trial_table_fr_df(
         key, trials_table, trials_params_table, firing_rate_map_params_table)
 
-    # Return empty dataframe if no trial times
+    # Return empty dataframe if no trial times or spike times
     column_names = _get_fr_df_column_names(trial_feature_name)
-    if len(trial_intervals) == 0:
+    if len(trial_intervals) == 0 or len(epoch_spike_times) == 0:
         return get_empty_df(column_names)
 
     # Separate trials into subsets according to value of trial_feature_name
@@ -149,11 +149,10 @@ def make_well_trial_table_fr_df_trial_subsets(
     data_list = []
     for trial_feature_value, trial_intervals_subset in trial_intervals_map.items():  # trial feature values
         for unit_id, unit_spike_times in epoch_spike_times.items():  # units
-            rate_map = _get_well_trial_rate_map(unit_spike_times, trial_intervals, trial_start_time_shift,
+            rate_map = _get_well_trial_rate_map(unit_spike_times, trial_intervals_subset, trial_start_time_shift,
                              trials_bin_centers, bin_width, bin_edges)
             data_list.append((unit_id, trial_feature_value, rate_map, bin_centers, bin_edges, len(trial_intervals_subset)))
-    return pd.DataFrame.from_dict({k: v for k, v in zip(column_names,
-                                                        zip(*data_list))})
+    return pd.DataFrame.from_dict({k: v for k, v in zip(column_names, zip(*data_list))})
 
 
 def get_well_single_trial_table_fr_df_extra_info_names(strip_s=False):
@@ -176,10 +175,12 @@ def make_well_single_trial_table_fr_df(key,
     trials_bin_centers, bin_edges, bin_centers, epoch_spike_times = _get_info_for_well_trial_table_fr_df(
         key, trials_table, trials_params_table, firing_rate_map_params_table)
 
+    # Get column names without trailing s
+    extra_info_names_no_s = get_well_single_trial_table_fr_df_extra_info_names(strip_s=True)
+
     # Return empty dataframe if no trial times
-    extra_info_names = get_well_single_trial_table_fr_df_extra_info_names()
     empty_df = pd.DataFrame.from_dict(
-            {k: [] for k in ["unit_id", "rate_map", "time_bin_centers", "time_bin_edges"] + extra_info_names})
+            {k: [] for k in ["unit_id", "rate_map", "time_bin_centers", "time_bin_edges"] + extra_info_names_no_s})
     if len(trial_intervals) == 0:
         return empty_df
 
@@ -208,9 +209,8 @@ def make_well_single_trial_table_fr_df(key,
     rate_map_dict = {k: v for k, v in zip(["unit_id", "rate_map", "time_bin_centers", "time_bin_edges"],
                                           zip(*data_list))}
     # Get trials entry so can store extra information from this table
+    extra_info_names = get_well_single_trial_table_fr_df_extra_info_names()
     trials_entry = (trials_table & key).fetch1()
-    # Get column names without trailing s
-    extra_info_names_no_s = get_well_single_trial_table_fr_df_extra_info_names(strip_s=True)
     extra_info_dict = {k_no_s: duplicate_elements(list(trials_entry[k]), len(unit_ids))
                        for k_no_s, k in zip(extra_info_names_no_s, extra_info_names)}
 

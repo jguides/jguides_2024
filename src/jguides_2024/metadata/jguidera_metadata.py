@@ -9,6 +9,7 @@ from src.jguides_2024.datajoint_nwb_utils.datajoint_table_helpers import get_sch
     populate_insert, insert1_print, \
     get_relationship_text
 from src.jguides_2024.datajoint_nwb_utils.metadata_helpers import get_jguidera_nwbf_names
+from src.jguides_2024.datajoint_nwb_utils.schema_helpers import populate_schema
 from src.jguides_2024.utils.df_helpers import df_from_data_list, df_pop
 from src.jguides_2024.utils.dict_helpers import invert_dict
 from src.jguides_2024.utils.set_helpers import check_membership
@@ -172,13 +173,12 @@ def get_environment_color(environment):
     return get_environment_color_map()[environment]
 
 
-def populate_jguidera_task_identification(key=None, tolerate_error=False):
+def populate_jguidera_metadata(key=None, tolerate_error=False):
     schema_name = "jguidera_metadata"
-    for table_name in get_schema_table_names_from_file(schema_name):
-        table = eval(table_name)
-        populate_insert(table, key=key, tolerate_error=tolerate_error)
+    upstream_schema_populate_fn_list = []
+    populate_schema(schema_name, key, tolerate_error, upstream_schema_populate_fn_list)
 
 
-def drop_jguidera_task_identification():
+def drop_jguidera_metadata():
     schema.drop()
 

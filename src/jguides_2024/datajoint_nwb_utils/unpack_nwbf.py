@@ -68,8 +68,7 @@ def get_epoch_timestamps_nwbf(
                                       len(sparse_timestamps) - 1)  # update array with corresponding idxs in full data
 
     # Get start and end time of epoch
-    epoch_interval = get_epoch_interval_nwbf(nwbf=nwbf,
-                                             epoch=epoch)
+    epoch_interval = get_epoch_interval_nwbf(nwbf=nwbf, epoch=epoch)
 
     # First, find timestamps that span epoch (just outside epoch interval) if these exist, using sparse timestamps
     # array. This helps speed up subsequent search for entries in full timestamps that are within epoch.

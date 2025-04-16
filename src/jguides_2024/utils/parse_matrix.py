@@ -128,16 +128,19 @@ def parse_matrix(df_, characteristics_, arr_, valid_bool_, settings=None, metric
     # Go through loop without parallelization if want to debug
     if debug_mode:
         for idx, setting in enumerate(settings):
+            if verbose:
+                print_iteration_progress(idx, len(settings), target_num_print_statements=10)
             results.append(apply_setting_bools(setting))
 
-    pool = mp.Pool(mp.cpu_count())
-    for idx, setting in enumerate(settings):
-        if verbose:
-            print_iteration_progress(idx, len(settings), target_num_print_statements=10)
-        pool.apply_async(
-            apply_setting_bools, args=(setting, ), callback=append_result, error_callback=show_error)
-    pool.close()
-    pool.join()  # waits until all processes done before running next line
+    else:
+        pool = mp.Pool(mp.cpu_count())
+        for idx, setting in enumerate(settings):
+            if verbose:
+                print_iteration_progress(idx, len(settings), target_num_print_statements=10)
+            pool.apply_async(
+                apply_setting_bools, args=(setting, ), callback=append_result, error_callback=show_error)
+        pool.close()
+        pool.join()  # waits until all processes done before running next line
 
     # Store results in dataframe
     metric_name = format_optional_var(metric_name, append_underscore=True)  # add underscore to metric name if passed

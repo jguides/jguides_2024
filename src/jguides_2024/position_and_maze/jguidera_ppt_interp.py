@@ -45,8 +45,7 @@ class PptInterpSel(SelBase):
 
         # Get res_time_bins_pool_param_name
         for shorthand_param_name in ["epoch_100ms",  # for embedding
-                                      "path_100ms",  # for ppt colored embedding
-                                      "path_20ms",  # for GLM analysis
+                                      "path_100ms",  # for ppt colored embedding and GLM analysis
                                               ]:
             res_time_bins_pool_param_name = ResTimeBinsPoolSel().lookup_param_name_from_shorthand(shorthand_param_name)
             key_filter.update({"res_time_bins_pool_param_name": res_time_bins_pool_param_name})
